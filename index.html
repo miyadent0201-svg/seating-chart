@@ -52,6 +52,7 @@ button{cursor:pointer;-webkit-tap-highlight-color:transparent}
 .desk small{font-size:10px;line-height:1.2;text-align:center}
 .chair{min-height:44px;border:1.5px solid var(--line);background:var(--bg);border-radius:8px;padding:3px 4px;font-size:13px;line-height:1.25;word-break:break-all;color:var(--muted);min-width:0}
 .chair.on{border-color:var(--accent);background:var(--surface);color:var(--ink);font-weight:700}
+.chair .aff{display:block;font-weight:400;font-size:10px;line-height:1.2;color:var(--muted)}
 .chair.kid{background:var(--child);font-size:12px}
 .chair.kid::after{content:"（子）";font-weight:400;font-size:10px;color:var(--muted)}
 .add{min-height:30px;border:1.5px dashed var(--line);background:transparent;border-radius:8px;color:var(--muted);font-size:12px;padding:2px}
@@ -89,7 +90,7 @@ var SIDES=['L','R','T','B'];
 var app=document.getElementById('app');
 var state, viewing=false, sheet=null, toastMsg='', toastTimer=0;
 
-function blank(n){var a=[];for(var i=0;i<n;i++)a.push({n:'',c:false});return a;}
+function blank(n){var a=[];for(var i=0;i<n;i++)a.push({n:'',c:false,a:''});return a;}
 function mk(id,label,size){return {id:id,label:label,size:size,L:blank(size/2),R:blank(size/2),T:[],B:[]};}
 function defaultState(){
   return {rev:0,title:'席次表',sub:'',tables:[mk('a','A',6),mk('b','B',6),mk('c','C',6),mk('d','D',4),mk('e','E',4),mk('f','F',4)]};
@@ -109,13 +110,15 @@ function decodeState(h){
     var o=JSON.parse(decodeURIComponent(escape(atob(b))));
     if(!valid(o))return null;
     o.rev=0;o.title=String(o.title||'');o.sub=String(o.sub||'');
-    o.tables.forEach(function(t){t.label=String(t.label||'');t.size=+t.size||6;t.id=String(t.id);SIDES.forEach(function(k){t[k]=t[k].map(function(x){return {n:String((x&&x.n)||''),c:!!(x&&x.c)};});});});
+    o.tables.forEach(function(t){t.label=String(t.label||'');t.size=+t.size||6;t.id=String(t.id);SIDES.forEach(function(k){t[k]=t[k].map(function(x){return {n:String((x&&x.n)||''),c:!!(x&&x.c),a:String((x&&x.a)||'')};});});});
     return o;
   }catch(e){return null;}
 }
 function loadDraft(){
   var d=null;try{d=JSON.parse(localStorage.getItem(LS_KEY));}catch(e){}
-  return valid(d)?d:null;
+  if(!valid(d))return null;
+  d.tables.forEach(function(t){SIDES.forEach(function(k){t[k].forEach(function(x){x.n=String(x.n||'');x.a=String(x.a||'');x.c=!!x.c;});});});
+  return d;
 }
 function load(){
   var m=/^#d=([A-Za-z0-9_-]+)$/.exec(location.hash||'');
@@ -138,7 +141,7 @@ function total(){var n=0;state.tables.forEach(function(t){n+=seated(t);});return
 /* ---------- screen ---------- */
 function chairHtml(t,side,i){
   var s=t[side][i];
-  return '<button type="button" class="chair'+(s.n?' on':'')+(s.c?' kid':'')+'" data-act="seat" data-t="'+t.id+'" data-s="'+side+'" data-i="'+i+'" aria-label="'+esc(t.label)+'卓の席 '+(s.n?esc(s.n):'空席')+'">'+(s.n?esc(s.n):'空席')+'</button>';
+  return '<button type="button" class="chair'+(s.n?' on':'')+(s.c?' kid':'')+'" data-act="seat" data-t="'+t.id+'" data-s="'+side+'" data-i="'+i+'" aria-label="'+esc(t.label)+'卓の席 '+(s.n?esc(s.n):'空席')+'">'+(s.n&&s.a?'<small class="aff">'+esc(s.a)+'</small>':'')+(s.n?esc(s.n):'空席')+'</button>';
 }
 function addHtml(t,side){
   return '<button type="button" class="add" data-act="add" data-t="'+t.id+'" data-s="'+side+'" aria-label="'+esc(t.label)+'卓に席を追加">＋席</button>';
@@ -162,7 +165,7 @@ function render(){
   var h='<div class="wrap'+(viewing?' view':'')+'"><header class="head">'+
     '<input id="title" type="text" aria-label="タイトル" placeholder="タイトル" value="'+esc(state.title)+'"'+ro+'>'+
     '<input id="sub" type="text" aria-label="日付・会の名前" placeholder="日付・会の名前（印刷に入ります）" value="'+esc(state.sub)+'"'+ro+'>'+
-    '<p class="hint">'+(viewing?'送られてきた席次表です。「印刷用PDF」から印刷できます。':'席を押して名前を入れます。「＋席」で同じ机に何人でも追加できます。机を押すと机の名前を変えられます。')+'</p></header>'+
+    '<p class="hint">'+(viewing?'送られてきた席次表です。「印刷用PDF」から印刷できます。':'席を押して氏名と所属病院名を入れます。「＋席」で同じ机に何人でも追加できます。机を押すと机の名前を変えられます。')+'</p></header>'+
     '<div class="room"><div class="front"><span class="wc">WC入口</span><span class="screen">プロジェクタースクリーン</span><span class="stairs"><b>階段</b></span></div>'+
     '<div class="cols"><div class="col">';
   for(var i=0;i<3;i++)h+=tableHtml(state.tables[i]);
@@ -188,7 +191,8 @@ function sheetHtml(){
   if(s.kind==='seat'){
     t=tbl(s.t);x=t[s.s][s.i];var last=t[s.s].length-1;
     return '<h2>'+esc(t.label)+'卓の席</h2>'+
-      '<label class="f" for="seat-name">お名前<input id="seat-name" type="text" autocomplete="off" enterkeyhint="done" value="'+esc(x.n)+'"></label>'+
+      '<label class="f" for="seat-name">氏名<input id="seat-name" type="text" autocomplete="off" enterkeyhint="next" value="'+esc(x.n)+'"></label>'+
+      '<label class="f" for="seat-aff">所属病院名（空欄でもかまいません）<input id="seat-aff" type="text" autocomplete="off" enterkeyhint="done" value="'+esc(x.a||'')+'"></label>'+
       '<label class="c" for="seat-kid"><input id="seat-kid" type="checkbox"'+(x.c?' checked':'')+'>お子様の席（小さめに表示）</label>'+
       '<div class="row"><button type="button" class="btn pri" data-act="seat-ok">決定</button><button type="button" class="btn" data-act="close">やめる</button></div>'+
       '<div class="row"><button type="button" class="btn" data-act="seat-up"'+(s.i===0?' disabled':'')+'>順番を前へ</button><button type="button" class="btn" data-act="seat-down"'+(s.i===last?' disabled':'')+'>順番を後ろへ</button></div>'+
@@ -228,7 +232,8 @@ function sheetHtml(){
 function commitSeat(){
   var s=sheet;if(!s||s.kind!=='seat')return;
   var x=tbl(s.t)[s.s][s.i];
-  var n=document.getElementById('seat-name'),k=document.getElementById('seat-kid');
+  var n=document.getElementById('seat-name'),k=document.getElementById('seat-kid'),af=document.getElementById('seat-aff');
+  if(af)x.a=af.value.replace(/\s+/g,' ').trim();
   if(n)x.n=n.value.replace(/\s+/g,' ').trim();
   if(k)x.c=k.checked;
   touch();
@@ -238,19 +243,19 @@ function onAct(act,el){
   if(viewing&&!/^(pdf|pdf-save|print|close|edit|edit-ok)$/.test(act))return;
   switch(act){
     case 'seat': sheet={kind:'seat',t:el.getAttribute('data-t'),s:el.getAttribute('data-s'),i:+el.getAttribute('data-i'),focus:'seat-name'};break;
-    case 'add': t=tbl(el.getAttribute('data-t'));arr=t[el.getAttribute('data-s')];arr.push({n:'',c:false});touch();
+    case 'add': t=tbl(el.getAttribute('data-t'));arr=t[el.getAttribute('data-s')];arr.push({n:'',c:false,a:''});touch();
       sheet={kind:'seat',t:t.id,s:el.getAttribute('data-s'),i:arr.length-1,focus:'seat-name'};break;
     case 'desk': sheet={kind:'desk',t:el.getAttribute('data-t'),focus:'desk-name'};break;
     case 'close': sheet=null;break;
     case 'seat-ok': commitSeat();sheet=null;break;
-    case 'seat-clear': x=tbl(s.t)[s.s][s.i];x.n='';x.c=false;touch();sheet=null;break;
+    case 'seat-clear': x=tbl(s.t)[s.s][s.i];x.n='';x.a='';x.c=false;touch();sheet=null;break;
     case 'seat-del': tbl(s.t)[s.s].splice(s.i,1);touch();sheet=null;break;
     case 'seat-up': case 'seat-down':
       commitSeat();arr=tbl(s.t)[s.s];var j=s.i+(act==='seat-up'?-1:1);
       if(j>=0&&j<arr.length){x=arr[s.i];arr[s.i]=arr[j];arr[j]=x;s.i=j;touch();}break;
     case 'desk-ok': x=document.getElementById('desk-name');t=tbl(s.t);t.label=(x.value.trim()||t.label);touch();sheet=null;break;
     case 'reset': sheet={kind:'reset'};break;
-    case 'reset-names': state.tables.forEach(function(t){SIDES.forEach(function(k){t[k].forEach(function(x){x.n='';x.c=false;});});});touch();sheet=null;break;
+    case 'reset-names': state.tables.forEach(function(t){SIDES.forEach(function(k){t[k].forEach(function(x){x.n='';x.a='';x.c=false;});});});touch();sheet=null;break;
     case 'reset-all': var d=defaultState();d.title=state.title;d.sub=state.sub;state=d;touch();sheet=null;break;
     case 'pdf': try{var c=drawSheet(state);sheet={kind:'pdf',url:c.toDataURL('image/jpeg',0.92)};}catch(e){toast('プレビューを作れませんでした。もう一度お試しください。');return;}break;
     case 'pdf-save': savePdf();return;
@@ -280,7 +285,8 @@ app.addEventListener('input',function(e){
 });
 app.addEventListener('keydown',function(e){
   if(e.key==='Enter'&&!e.isComposing&&e.keyCode!==229){
-    if(e.target.id==='seat-name'){e.preventDefault();onAct('seat-ok');}
+    if(e.target.id==='seat-name'){e.preventDefault();var nx=document.getElementById('seat-aff');if(nx){nx.focus();try{nx.select();}catch(er){}}}
+    else if(e.target.id==='seat-aff'){e.preventDefault();onAct('seat-ok');}
     else if(e.target.id==='desk-name'){e.preventDefault();onAct('desk-ok');}
     else if(e.target.id==='title'||e.target.id==='sub'){e.target.blur();}
   }else if(e.key==='Escape'&&sheet){sheet=null;render();}
@@ -331,7 +337,12 @@ function drawSheet(st){
     if(!s.n){g.setLineDash([1,0.8]);g.strokeStyle='#bbbbbb';g.lineWidth=0.25;g.stroke();g.setLineDash([]);return;}
     g.fillStyle=kid?'#eeeeee':'#ffffff';g.fill();
     g.strokeStyle='#444444';g.lineWidth=kid?0.25:0.4;g.stroke();
-    text(s.n,x+w/2,y+h/2+0.1,w-2.4,kid?nameSz*0.82:nameSz,kid?'400':'700');
+    var ns=kid?nameSz*0.82:nameSz;
+    if(s.a){
+      var as=Math.max(2.4,Math.min(3.6,ih*0.24)),n2=Math.min(ns,ih*0.5),blockH=as+n2+ih*0.06,ty=y+h/2-blockH/2;
+      text(s.a,x+w/2,ty+as/2,w-2.4,as,'400','center','#444444');
+      text(s.n,x+w/2,ty+as+ih*0.06+n2/2+0.1,w-2.4,n2,kid?'400':'700');
+    }else text(s.n,x+w/2,y+h/2+0.1,w-2.4,ns,kid?'400':'700');
   }
   function endRow(list,cx,y){
     var n=list.length,w=Math.min(CHIPW,(COLW-(n-1)*PAD)/n),x=cx-(n*w+(n-1)*PAD)/2;
