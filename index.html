@@ -26,7 +26,7 @@ body{background:var(--bg);color:var(--ink);font-family:var(--font);font-size:15p
 button,input{font:inherit;color:inherit}
 button{cursor:pointer;-webkit-tap-highlight-color:transparent}
 :focus-visible{outline:3px solid var(--accent);outline-offset:2px}
-.wrap{max-width:760px;margin:0 auto;padding:14px 12px 96px;display:flex;flex-direction:column;gap:12px}
+.wrap{max-width:760px;margin:0 auto;padding:14px 12px 160px;display:flex;flex-direction:column;gap:12px}
 .head{display:flex;flex-direction:column;gap:6px}
 .head input{width:100%;border:1px solid transparent;border-bottom-color:var(--line);background:transparent;padding:4px 2px;border-radius:4px}
 .head input:focus{border-color:var(--accent);background:var(--surface);outline:none}
@@ -76,10 +76,12 @@ button{cursor:pointer;-webkit-tap-highlight-color:transparent}
 .row{display:flex;gap:8px;flex-wrap:wrap}
 .pv{background:#fff;border:1px solid var(--line);max-width:100%;height:auto;display:block;margin:0 auto}
 .toast{position:fixed;left:50%;bottom:120px;transform:translateX(-50%);background:var(--ink);color:var(--surface);padding:10px 14px;border-radius:8px;font-size:14px;z-index:30;max-width:90%;text-align:center}
-#printimg{display:none}
+#printbox{display:none}
+.pv+.pv{margin-top:8px}
+.btns+.btns{margin-top:0}
 .view .add{display:none}
 .share-url{font-size:12px !important;word-break:break-all}
-@media print{@page{size:A4 landscape;margin:0}html,body{background:#fff}#app{display:none}#printimg{display:block;width:297mm;height:210mm}}
+@media print{html,body{background:#fff}#app{display:none}#printbox{display:block}#printbox img{display:block;page-break-after:always;break-after:page}#printbox img:last-child{page-break-after:auto;break-after:auto}#printbox.ls img{width:297mm;height:210mm}#printbox.pt img{width:210mm;height:297mm}}
 @media (min-width:600px){.chair{font-size:15px}.mid{grid-template-columns:minmax(0,1fr) 64px minmax(0,1fr)}.ov{align-items:center}.sheet{border-radius:14px}}
 
 .room{padding:8px 0}
@@ -99,7 +101,7 @@ button{cursor:pointer;-webkit-tap-highlight-color:transparent}
 .seat.on{box-shadow:inset 0 0 0 2px var(--accent)}
 .seat.kid{background:var(--child)}
 .seat:focus-visible{outline-offset:-3px}
-</style></head><body><div id="app"></div><img id="printimg" alt=""><script>
+</style></head><body><div id="app"></div><div id="printbox"></div><style id="pagestyle"></style><script>
 (function(){
 'use strict';
 var LS_KEY='sekiji-draft-v2';
@@ -166,7 +168,7 @@ function render(){
   var h='<div class="wrap'+(viewing?' view':'')+'"><header class="head">'+
     '<input id="title" type="text" aria-label="タイトル" placeholder="タイトル" value="'+esc(state.title)+'"'+ro+'>'+
     '<input id="sub" type="text" aria-label="日付・会の名前" placeholder="日付・会の名前（印刷に入ります）" value="'+esc(state.sub)+'"'+ro+'>'+
-    '<p class="hint">'+(viewing?'送られてきた席次表です。「印刷用PDF」から印刷できます。':'席を押して氏名と所属病院名を入れます。机の真ん中（＋）の席も、押せば使えます。表は横に動かせます。')+'</p></header>'+
+    '<p class="hint">'+(viewing?'送られてきた席次表です。「席次表PDF」「席札PDF」から印刷できます。':'席を押して氏名と所属病院名を入れます。机の真ん中（＋）の席も、押せば使えます。表は横に動かせます。')+'</p></header>'+
     '<div class="room"><div id="scroll" class="scroll"><div class="grid"><div class="frontbar">前方</div>';
   for(var r=0;r<ROWS;r++){
     h+='<div class="rw">';
@@ -177,8 +179,8 @@ function render(){
   }
   h+='</div></div></div></div>'+
     '<div class="bar"><div class="bar-in"><div class="status"><span id="st">'+esc(statusText())+'</span><span>合計 '+total()+' 名</span></div>'+
-    '<div class="btns"><button type="button" class="btn pri" data-act="pdf">印刷用PDF</button>'+
-    (viewing?'<button type="button" class="btn" data-act="edit">自分で編集する</button>'
+    '<div class="btns"><button type="button" class="btn pri" data-act="pdf">席次表PDF</button><button type="button" class="btn pri" data-act="cards">席札PDF</button></div>'+
+    '<div class="btns">'+(viewing?'<button type="button" class="btn" data-act="edit">自分で編集する</button>'
       :'<button type="button" class="btn" data-act="share">リンクで共有</button><button type="button" class="btn slim warn" data-act="reset">リセット</button>')+
     '</div></div></div>';
   if(sheet)h+='<div class="ov" data-act="ov"><div class="sheet" role="dialog" aria-modal="true">'+sheetHtml()+'</div></div>';
@@ -207,9 +209,11 @@ function sheetHtml(){
       '<div class="row"><button type="button" class="btn warn" data-act="reset-ok">全部消す</button><button type="button" class="btn" data-act="close">やめる</button></div>';
   }
   if(s.kind==='pdf'){
-    return '<h2>印刷プレビュー（A4横）</h2>'+
-      '<img class="pv" alt="席次表の印刷プレビュー" src="'+s.url+'">'+
+    var imgs='';for(var i=0;i<s.urls.length;i++)imgs+='<img class="pv" alt="印刷プレビュー '+(i+1)+'ページ目" src="'+s.urls[i]+'">';
+    return '<h2>'+(s.mode==='cards'?'席札プレビュー（A4縦・1枚に8人分・全'+s.urls.length+'ページ）':'印刷プレビュー（A4横）')+'</h2>'+
+      (s.mode==='cards'?'<p>点線で切り離して使います。色はクリニックごとに自動で分かれます。</p>':'')+
       '<div class="row"><button type="button" class="btn pri" data-act="pdf-save">PDFを保存</button><button type="button" class="btn" data-act="print">このまま印刷</button></div>'+
+      imgs+
       '<div class="row"><button type="button" class="btn" data-act="close">閉じる</button></div>';
   }
   if(s.kind==='share'){
@@ -235,7 +239,7 @@ function commitSeat(){
 }
 function onAct(act,el){
   var s=sheet;
-  if(viewing&&!/^(pdf|pdf-save|print|close|edit|edit-ok)$/.test(act))return;
+  if(viewing&&!/^(pdf|cards|pdf-save|print|close|edit|edit-ok)$/.test(act))return;
   switch(act){
     case 'seat': sheet={kind:'seat',c:el.getAttribute('data-c'),focus:'seat-name'};break;
     case 'close': sheet=null;break;
@@ -243,9 +247,17 @@ function onAct(act,el){
     case 'seat-clear': delete state.seats[s.c];touch();sheet=null;break;
     case 'reset': sheet={kind:'reset'};break;
     case 'reset-ok': state.seats={};touch();sheet=null;break;
-    case 'pdf': try{var c=drawSheet(state);sheet={kind:'pdf',url:c.toDataURL('image/jpeg',0.92)};}catch(e){toast('プレビューを作れませんでした。もう一度お試しください。');return;}break;
+    case 'pdf': try{sheet={kind:'pdf',mode:'chart',urls:[drawSheet(state).toDataURL('image/jpeg',0.92)]};}catch(e){toast('プレビューを作れませんでした。もう一度お試しください。');return;}break;
+    case 'cards':
+      if(!total()){toast('先に席を押して、氏名を入れてください。');return;}
+      try{sheet={kind:'pdf',mode:'cards',urls:drawCards(state).map(function(c){return c.toDataURL('image/jpeg',0.92);})};}catch(e){toast('席札を作れませんでした。もう一度お試しください。');return;}break;
     case 'pdf-save': savePdf();return;
-    case 'print': document.getElementById('printimg').src=s.url;setTimeout(function(){window.print();},60);return;
+    case 'print':
+      var pb=document.getElementById('printbox'),land=s.mode!=='cards',hh='';
+      for(var q=0;q<s.urls.length;q++)hh+='<img alt="" src="'+s.urls[q]+'">';
+      pb.className=land?'ls':'pt';pb.innerHTML=hh;
+      document.getElementById('pagestyle').textContent='@page{size:A4 '+(land?'landscape':'portrait')+';margin:0}';
+      setTimeout(function(){window.print();},120);return;
     case 'share': sheet={kind:'share',url:shareUrl()};break;
     case 'share-copy': copyText(s.url);return;
     case 'share-send': try{navigator.share({title:(state.title||'席次表'),url:s.url}).catch(function(){});}catch(e){}return;
@@ -332,38 +344,97 @@ function drawSheet(st){
   return c;
 }
 
-/* ---------- PDF (one A4 landscape page holding the JPEG) ---------- */
+/* ---------- place cards (A4 portrait, 8 per page, one colour per clinic) ---------- */
+var PALETTE=['#ffbe5c','#ff5757','#ffde59','#4caf3a','#e2abf0','#38b6ff','#5574ff','#ff7722','#5ce1c6','#ff9ec4','#c9e265','#b9a6ff','#d9b38c','#9fc3d9','#f4a6a6','#8fd3a0'];
+function seatOrder(st){
+  var list=[];
+  for(var r=0;r<ROWS;r++)for(var i=0;i<COLS.length;i++){var c=COLS.charAt(i)+(r+1);if(st.seats[c])list.push({code:c,n:st.seats[c].n,a:st.seats[c].a});}
+  return list;
+}
+function clinicColors(st){
+  var map={},k=0;
+  seatOrder(st).forEach(function(x){if(x.a&&!map[x.a]){map[x.a]=PALETTE[k%PALETTE.length];k++;}});
+  return map;
+}
+function drawCards(st){
+  var list=seatOrder(st),colors=clinicColors(st),order={},k=0;
+  list.forEach(function(x){var key=x.a||'￿';if(!(key in order))order[key]=k++;});
+  list.sort(function(p,q){var d=order[p.a||'￿']-order[q.a||'￿'];return d||0;});
+  var pages=[],S=10,CWc=105,CHc=74.25;
+  for(var start=0;start<list.length;start+=8){
+    var c=document.createElement('canvas');c.width=2100;c.height=2970;
+    var g=c.getContext('2d');g.scale(S,S);
+    g.fillStyle='#ffffff';g.fillRect(0,0,210,297);g.textBaseline='middle';
+    (function(g){
+      function setFont(sz,w){g.font=(w||'400')+' '+sz+'px '+PFONT;}
+      function fit(s,maxW,sz,w,min){var size=sz;setFont(size,w);while(g.measureText(s).width>maxW&&size>min){size-=0.2;setFont(size,w);}return size;}
+      function rr(x,y,w,h,r){g.beginPath();g.moveTo(x+r,y);g.arcTo(x+w,y,x+w,y+h,r);g.arcTo(x+w,y+h,x,y+h,r);g.arcTo(x,y+h,x,y,r);g.arcTo(x,y,x+w,y,r);g.closePath();}
+      g.setLineDash([1.5,1.5]);g.strokeStyle='#bbbbbb';g.lineWidth=0.2;
+      g.beginPath();g.moveTo(105,0);g.lineTo(105,297);for(var j=1;j<4;j++){g.moveTo(0,j*CHc);g.lineTo(210,j*CHc);}g.stroke();g.setLineDash([]);
+      for(var i=0;i<8&&start+i<list.length;i++){
+        var x0=(i%2)*CWc,y0=Math.floor(i/2)*CHc,it=list[start+i];
+        rr(x0+9,y0+8,87,34,5);g.fillStyle=it.a?colors[it.a]:'#e6e6e6';g.fill();
+        if(it.a){
+          g.textAlign='center';g.fillStyle='#111111';
+          if(fit(it.a,77,15,'700',4)>=7.6)g.fillText(it.a,x0+52.5,y0+25.4,77);
+          else{
+            var t=it.a,mid=Math.ceil(t.length/2),cut=-1,z;
+            for(z=1;z<t.length-1;z++){if((t.charAt(z)===' '||t.charAt(z)==='\u3000')&&(cut<0||Math.abs(z-mid)<Math.abs(cut-mid)))cut=z;}
+            var l1=cut>0?t.slice(0,cut):t.slice(0,mid),l2=cut>0?t.slice(cut+1):t.slice(mid);
+            var sz=Math.min(fit(l1,77,11,'700',3.5),fit(l2,77,11,'700',3.5));setFont(sz,'700');
+            g.fillText(l1,x0+52.5,y0+25.4-sz*0.62,77);g.fillText(l2,x0+52.5,y0+25.4+sz*0.62,77);
+          }
+        }
+        setFont(6.6,'400');g.textAlign='right';g.fillStyle='#222222';g.fillText('さん',x0+94,y0+54.6);
+        fit(it.n,62,10.5,'400',4.5);g.textAlign='center';g.fillStyle='#111111';g.fillText(it.n,x0+44,y0+53.4,62);
+        g.strokeStyle='#4caf3a';g.lineWidth=0.8;g.beginPath();g.moveTo(x0+11,y0+60.4);g.lineTo(x0+94,y0+60.4);g.stroke();
+        setFont(2.8,'400');g.textAlign='right';g.fillStyle='#999999';g.fillText(it.code,x0+94,y0+65.5);
+      }
+    })(g);
+    pages.push(c);
+  }
+  return pages;
+}
+
+/* ---------- PDF (A4 pages, each holding one JPEG) ---------- */
 function b64bytes(dataUrl){
   var b=atob(dataUrl.slice(dataUrl.indexOf(',')+1)),a=new Uint8Array(b.length);
   for(var i=0;i<b.length;i++)a[i]=b.charCodeAt(i);return a;
 }
-function makePdf(jpeg,wpx,hpx){
-  var parts=[],len=0,offs=[];
+function makePdf(pages){
+  var parts=[],len=0,offs=[],N=pages.length;
   function put(x){var a;if(typeof x==='string'){a=new Uint8Array(x.length);for(var i=0;i<x.length;i++)a[i]=x.charCodeAt(i)&255;}else a=x;parts.push(a);len+=a.length;}
   function obj(n,body){offs[n]=len;put(n+' 0 obj\n'+body+'\nendobj\n');}
   put('%PDF-1.4\n%\xE2\xE3\xCF\xD3\n');
   obj(1,'<< /Type /Catalog /Pages 2 0 R >>');
-  obj(2,'<< /Type /Pages /Kids [3 0 R] /Count 1 >>');
-  obj(3,'<< /Type /Page /Parent 2 0 R /MediaBox [0 0 841.89 595.28] /Resources << /XObject << /Im0 4 0 R >> >> /Contents 5 0 R >>');
-  offs[4]=len;
-  put('4 0 obj\n<< /Type /XObject /Subtype /Image /Width '+wpx+' /Height '+hpx+' /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length '+jpeg.length+' >>\nstream\n');
-  put(jpeg);put('\nendstream\nendobj\n');
-  var cs='q 841.89 0 0 595.28 0 0 cm /Im0 Do Q';
-  obj(5,'<< /Length '+cs.length+' >>\nstream\n'+cs+'\nendstream');
-  var xref=len,x='xref\n0 6\n0000000000 65535 f \n';
-  for(var n=1;n<=5;n++)x+=('0000000000'+offs[n]).slice(-10)+' 00000 n \n';
-  put(x+'trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n'+xref+'\n%%EOF\n');
+  var kids='';for(var k=0;k<N;k++)kids+=(3+k*3)+' 0 R ';
+  obj(2,'<< /Type /Pages /Kids ['+kids+'] /Count '+N+' >>');
+  for(k=0;k<N;k++){
+    var pg=pages[k],po=3+k*3,io=po+1,co=po+2,land=pg.w>pg.h,pw=land?841.89:595.28,ph=land?595.28:841.89;
+    obj(po,'<< /Type /Page /Parent 2 0 R /MediaBox [0 0 '+pw+' '+ph+'] /Resources << /XObject << /Im0 '+io+' 0 R >> >> /Contents '+co+' 0 R >>');
+    offs[io]=len;
+    put(io+' 0 obj\n<< /Type /XObject /Subtype /Image /Width '+pg.w+' /Height '+pg.h+' /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length '+pg.jpeg.length+' >>\nstream\n');
+    put(pg.jpeg);put('\nendstream\nendobj\n');
+    var cs='q '+pw+' 0 0 '+ph+' 0 0 cm /Im0 Do Q';
+    obj(co,'<< /Length '+cs.length+' >>\nstream\n'+cs+'\nendstream');
+  }
+  var total=2+N*3,xref=len,x='xref\n0 '+(total+1)+'\n0000000000 65535 f \n';
+  for(var n=1;n<=total;n++)x+=('0000000000'+offs[n]).slice(-10)+' 00000 n \n';
+  put(x+'trailer\n<< /Size '+(total+1)+' /Root 1 0 R >>\nstartxref\n'+xref+'\n%%EOF\n');
   var out=new Uint8Array(len),p=0;
   for(var i=0;i<parts.length;i++){out.set(parts[i],p);p+=parts[i].length;}
   return out;
 }
-function pdfBytes(){var c=drawSheet(state);return makePdf(b64bytes(c.toDataURL('image/jpeg',0.92)),c.width,c.height);}
+function pdfBytes(mode){
+  var cs=mode==='cards'?drawCards(state):[drawSheet(state)];
+  return makePdf(cs.map(function(c){return {jpeg:b64bytes(c.toDataURL('image/jpeg',0.92)),w:c.width,h:c.height};}));
+}
 function savePdf(){
-  var bytes;
-  try{bytes=pdfBytes();}catch(e){toast('PDFを作れませんでした。もう一度お試しください。');return;}
+  var bytes,mode=sheet&&sheet.mode==='cards'?'cards':'chart';
+  try{bytes=pdfBytes(mode);}catch(e){toast('PDFを作れませんでした。もう一度お試しください。');return;}
   try{
     var url=URL.createObjectURL(new Blob([bytes],{type:'application/pdf'}));
-    var a=document.createElement('a');a.href=url;a.download='sekijihyo.pdf';a.style.display='none';
+    var a=document.createElement('a');a.href=url;a.download=mode==='cards'?'sekifuda.pdf':'sekijihyo.pdf';a.style.display='none';
     document.body.appendChild(a);a.click();
     setTimeout(function(){document.body.removeChild(a);URL.revokeObjectURL(url);},4000);
     toast('PDFを保存しました。');
@@ -382,6 +453,6 @@ function copyText(t){
 load();
 render();
 window.addEventListener('hashchange',function(){sheet=null;load();render();});
-window.__sekiji={shareUrl:shareUrl,pdfBytes:pdfBytes,getState:function(){return state;}};
+window.__sekiji={shareUrl:shareUrl,pdfBytes:pdfBytes,clinicColors:function(){return clinicColors(state);},getState:function(){return state;}};
 })();
 </script></body></html>
