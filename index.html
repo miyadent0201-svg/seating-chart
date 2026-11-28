@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex"><title>席次表メーカー</title><style id="css">
-/* layout idea: the room seen from above, screen wall on top, two columns of tables; a sticky action bar below */
+/* layout idea: the room seen from above, screen wall on top, four blocks of three-seat desks in six rows; a sticky action bar below */
 :root{
   --bg:#eef1f4; --surface:#ffffff; --ink:#16232e; --muted:#5b6b78; --line:#c5ced6;
   --accent:#0d6b63; --accent-ink:#ffffff; --desk:#e6d8bd; --desk-ink:#4b3d22;
@@ -79,98 +79,102 @@ button{cursor:pointer;-webkit-tap-highlight-color:transparent}
 #printimg{display:none}
 .view .add{display:none}
 .share-url{font-size:12px !important;word-break:break-all}
-@media print{@page{size:A4 portrait;margin:0}html,body{background:#fff}#app{display:none}#printimg{display:block;width:210mm;height:297mm}}
+@media print{@page{size:A4 landscape;margin:0}html,body{background:#fff}#app{display:none}#printimg{display:block;width:297mm;height:210mm}}
 @media (min-width:600px){.chair{font-size:15px}.mid{grid-template-columns:minmax(0,1fr) 64px minmax(0,1fr)}.ov{align-items:center}.sheet{border-radius:14px}}
+
+.room{padding:8px 0}
+.scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;padding:2px 8px 6px}
+.grid{display:flex;flex-direction:column;gap:14px;min-width:820px}
+.frontbar{align-self:center;background:var(--ink);color:var(--surface);font-weight:700;font-size:12px;letter-spacing:.2em;padding:4px 60px;border-radius:4px}
+.rw{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}
+.desk3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));border:2px solid var(--desk-ink);border-radius:6px;overflow:hidden;background:var(--desk)}
+.seat{min-height:64px;border:0;border-right:1px solid var(--desk-ink);background:var(--surface);padding:3px 2px 4px;display:flex;flex-direction:column;align-items:center;gap:1px;min-width:0;line-height:1.2;word-break:break-all;text-align:center}
+.seat:last-child{border-right:0}
+.seat .code{font-size:10px;color:var(--muted)}
+.seat .aff{font-size:9px;color:var(--muted)}
+.seat .nm{font-size:13px;font-weight:700;color:var(--ink);margin:auto 0}
+.seat .empty{font-size:12px;color:var(--muted);margin:auto 0}
+.seat.mid:not(.on){background:transparent}
+.seat.mid:not(.on) .code{opacity:.55}
+.seat.on{box-shadow:inset 0 0 0 2px var(--accent)}
+.seat.kid{background:var(--child)}
+.seat:focus-visible{outline-offset:-3px}
 </style></head><body><div id="app"></div><img id="printimg" alt=""><script>
 (function(){
 'use strict';
-var LS_KEY='sekiji-draft-v1';
-var PAGE_TITLE='席次表メーカー';
-var SIDES=['L','R','T','B'];
+var LS_KEY='sekiji-draft-v2';
+var COLS='ABCDEFGHIJKL', ROWS=6, BLOCKS=4;
 var app=document.getElementById('app');
 var state, viewing=false, sheet=null, toastMsg='', toastTimer=0;
 
-function blank(n){var a=[];for(var i=0;i<n;i++)a.push({n:'',c:false,a:''});return a;}
-function mk(id,label,size){return {id:id,label:label,size:size,L:blank(size/2),R:blank(size/2),T:[],B:[]};}
-function defaultState(){
-  return {rev:0,title:'席次表',sub:'',tables:[mk('a','A',6),mk('b','B',6),mk('c','C',6),mk('d','D',4),mk('e','E',4),mk('f','F',4)]};
-}
-function valid(s){
-  if(!s||typeof s!=='object'||!Array.isArray(s.tables)||s.tables.length!==6)return false;
-  for(var i=0;i<6;i++){var t=s.tables[i];if(!t)return false;for(var k=0;k<4;k++){if(!Array.isArray(t[SIDES[k]]))return false;}}
-  return true;
+function defaultState(){return {rev:0,title:'席次表',sub:'',seats:{}};}
+function validCode(c){return typeof c==='string'&&/^[A-L][1-6]$/.test(c);}
+function clean(o){
+  if(!o||typeof o!=='object'||!o.seats||typeof o.seats!=='object')return null;
+  var out={rev:+o.rev||0,title:String(o.title||''),sub:String(o.sub||''),seats:{}};
+  Object.keys(o.seats).forEach(function(c){
+    var x=o.seats[c];if(!validCode(c)||!x)return;
+    var n=String(x.n||'').trim();if(!n)return;
+    out.seats[c]={n:n,a:String(x.a||'').trim(),c:!!x.c};
+  });
+  return out;
 }
 function encodeState(st){
-  var o={title:st.title,sub:st.sub,tables:st.tables};
+  var o={title:st.title,sub:st.sub,seats:st.seats};
   return btoa(unescape(encodeURIComponent(JSON.stringify(o)))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
 }
 function decodeState(h){
   try{
     var b=h.replace(/-/g,'+').replace(/_/g,'/');while(b.length%4)b+='=';
-    var o=JSON.parse(decodeURIComponent(escape(atob(b))));
-    if(!valid(o))return null;
-    o.rev=0;o.title=String(o.title||'');o.sub=String(o.sub||'');
-    o.tables.forEach(function(t){t.label=String(t.label||'');t.size=+t.size||6;t.id=String(t.id);SIDES.forEach(function(k){t[k]=t[k].map(function(x){return {n:String((x&&x.n)||''),c:!!(x&&x.c),a:String((x&&x.a)||'')};});});});
-    return o;
+    var o=clean(JSON.parse(decodeURIComponent(escape(atob(b)))));
+    if(o)o.rev=0;return o;
   }catch(e){return null;}
 }
 function loadDraft(){
   var d=null;try{d=JSON.parse(localStorage.getItem(LS_KEY));}catch(e){}
-  if(!valid(d))return null;
-  d.tables.forEach(function(t){SIDES.forEach(function(k){t[k].forEach(function(x){x.n=String(x.n||'');x.a=String(x.a||'');x.c=!!x.c;});});});
-  return d;
+  return clean(d);
 }
 function load(){
-  var m=/^#d=([A-Za-z0-9_-]+)$/.exec(location.hash||'');
+  var m=/^#s=([A-Za-z0-9_-]+)$/.exec(location.hash||'');
   var shared=m?decodeState(m[1]):null;
   if(shared){state=shared;viewing=true;return;}
   viewing=false;
   state=loadDraft()||defaultState();
 }
-function shareUrl(){return location.href.split('#')[0]+'#d='+encodeState(state);}
+function shareUrl(){return location.href.split('#')[0]+'#s='+encodeState(state);}
 function touch(){
   if(viewing)return;
   state.rev=Date.now();
   try{localStorage.setItem(LS_KEY,JSON.stringify(state));}catch(e){}
 }
 function esc(s){return String(s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
-function tbl(id){for(var i=0;i<state.tables.length;i++)if(state.tables[i].id===id)return state.tables[i];return null;}
-function seated(t){var n=0;SIDES.forEach(function(s){t[s].forEach(function(x){if(x.n)n++;});});return n;}
-function total(){var n=0;state.tables.forEach(function(t){n+=seated(t);});return n;}
+function total(){return Object.keys(state.seats).length;}
+function codeAt(block,pos,row){return COLS.charAt(block*3+pos)+(row+1);}
 
 /* ---------- screen ---------- */
-function chairHtml(t,side,i){
-  var s=t[side][i];
-  return '<button type="button" class="chair'+(s.n?' on':'')+(s.c?' kid':'')+'" data-act="seat" data-t="'+t.id+'" data-s="'+side+'" data-i="'+i+'" aria-label="'+esc(t.label)+'卓の席 '+(s.n?esc(s.n):'空席')+'">'+(s.n&&s.a?'<small class="aff">'+esc(s.a)+'</small>':'')+(s.n?esc(s.n):'空席')+'</button>';
-}
-function addHtml(t,side){
-  return '<button type="button" class="add" data-act="add" data-t="'+t.id+'" data-s="'+side+'" aria-label="'+esc(t.label)+'卓に席を追加">＋席</button>';
-}
-function sideHtml(t,side){
-  var h='';for(var i=0;i<t[side].length;i++)h+=chairHtml(t,side,i);
-  return h+addHtml(t,side);
-}
-function tableHtml(t){
-  return '<section class="tbl" aria-label="'+esc(t.label)+'卓">'+
-    '<div class="end">'+sideHtml(t,'T')+'</div>'+
-    '<div class="mid"><div class="side">'+sideHtml(t,'L')+'</div>'+
-    '<button type="button" class="desk" data-act="desk" data-t="'+t.id+'"><strong>'+esc(t.label)+'</strong><small>'+t.size+'人掛け</small><small>'+seated(t)+'名</small></button>'+
-    '<div class="side">'+sideHtml(t,'R')+'</div></div>'+
-    '<div class="end">'+sideHtml(t,'B')+'</div></section>';
+function seatHtml(code,mid){
+  var s=state.seats[code];
+  var cls='seat'+(mid?' mid':'')+(s?' on':'')+(s&&s.c?' kid':'');
+  var body=s?((s.a?'<small class="aff">'+esc(s.a)+'</small>':'')+'<span class="nm">'+esc(s.n)+'</span>'):'<span class="empty">'+(mid?(viewing?'':'＋'):'空席')+'</span>';
+  return '<button type="button" class="'+cls+'" data-act="seat" data-c="'+code+'" aria-label="'+code+'の席 '+(s?esc(s.n):(mid?'真ん中・未使用':'空席'))+'"><small class="code">'+code+'</small>'+body+'</button>';
 }
 function statusText(){return viewing?'共有された席次表（見るだけ）':'この端末に自動保存しています';}
 function render(){
   var keep=document.activeElement&&document.activeElement.id;
+  var sc=document.getElementById('scroll'),sl=sc?sc.scrollLeft:0;
   var ro=viewing?' readonly':'';
   var h='<div class="wrap'+(viewing?' view':'')+'"><header class="head">'+
     '<input id="title" type="text" aria-label="タイトル" placeholder="タイトル" value="'+esc(state.title)+'"'+ro+'>'+
     '<input id="sub" type="text" aria-label="日付・会の名前" placeholder="日付・会の名前（印刷に入ります）" value="'+esc(state.sub)+'"'+ro+'>'+
-    '<p class="hint">'+(viewing?'送られてきた席次表です。「印刷用PDF」から印刷できます。':'席を押して氏名と所属病院名を入れます。「＋席」で同じ机に何人でも追加できます。机を押すと机の名前を変えられます。')+'</p></header>'+
-    '<div class="room"><div class="front"><span class="wc">WC入口</span><span class="screen">プロジェクタースクリーン</span><span class="stairs"><b>階段</b></span></div>'+
-    '<div class="cols"><div class="col">';
-  for(var i=0;i<3;i++)h+=tableHtml(state.tables[i]);
-  h+='</div><div class="col">';
-  for(i=3;i<6;i++)h+=tableHtml(state.tables[i]);
+    '<p class="hint">'+(viewing?'送られてきた席次表です。「印刷用PDF」から印刷できます。':'席を押して氏名と所属病院名を入れます。机の真ん中（＋）の席も、押せば使えます。表は横に動かせます。')+'</p></header>'+
+    '<div class="room"><div id="scroll" class="scroll"><div class="grid"><div class="frontbar">前方</div>';
+  for(var r=0;r<ROWS;r++){
+    h+='<div class="rw">';
+    for(var b=0;b<BLOCKS;b++){
+      h+='<div class="desk3">'+seatHtml(codeAt(b,0,r),false)+seatHtml(codeAt(b,1,r),true)+seatHtml(codeAt(b,2,r),false)+'</div>';
+    }
+    h+='</div>';
+  }
   h+='</div></div></div></div>'+
     '<div class="bar"><div class="bar-in"><div class="status"><span id="st">'+esc(statusText())+'</span><span>合計 '+total()+' 名</span></div>'+
     '<div class="btns"><button type="button" class="btn pri" data-act="pdf">印刷用PDF</button>'+
@@ -180,6 +184,7 @@ function render(){
   if(sheet)h+='<div class="ov" data-act="ov"><div class="sheet" role="dialog" aria-modal="true">'+sheetHtml()+'</div></div>';
   if(toastMsg)h+='<div class="toast" role="status">'+esc(toastMsg)+'</div>';
   app.innerHTML=h;
+  sc=document.getElementById('scroll');if(sc)sc.scrollLeft=sl;
   if(sheet&&sheet.focus){var f=document.getElementById(sheet.focus);if(f){f.focus();try{f.select();}catch(e){}}sheet.focus=null;}
   else if(keep&&!sheet){var k=document.getElementById(keep);if(k)k.focus();}
 }
@@ -187,36 +192,28 @@ function refreshStatus(){var el=document.getElementById('st');if(el)el.textConte
 function toast(m){toastMsg=m;clearTimeout(toastTimer);toastTimer=setTimeout(function(){toastMsg='';render();},3500);render();}
 
 function sheetHtml(){
-  var s=sheet,t,x;
+  var s=sheet,x;
   if(s.kind==='seat'){
-    t=tbl(s.t);x=t[s.s][s.i];var last=t[s.s].length-1;
-    return '<h2>'+esc(t.label)+'卓の席</h2>'+
+    x=state.seats[s.c]||{n:'',a:'',c:false};
+    return '<h2>'+s.c+' の席</h2>'+
       '<label class="f" for="seat-name">氏名<input id="seat-name" type="text" autocomplete="off" enterkeyhint="next" value="'+esc(x.n)+'"></label>'+
-      '<label class="f" for="seat-aff">所属病院名（空欄でもかまいません）<input id="seat-aff" type="text" autocomplete="off" enterkeyhint="done" value="'+esc(x.a||'')+'"></label>'+
-      '<label class="c" for="seat-kid"><input id="seat-kid" type="checkbox"'+(x.c?' checked':'')+'>お子様の席（小さめに表示）</label>'+
+      '<label class="f" for="seat-aff">所属病院名（空欄でもかまいません）<input id="seat-aff" type="text" autocomplete="off" enterkeyhint="done" value="'+esc(x.a)+'"></label>'+
+      '<label class="c" for="seat-kid"><input id="seat-kid" type="checkbox"'+(x.c?' checked':'')+'>お子様の席</label>'+
       '<div class="row"><button type="button" class="btn pri" data-act="seat-ok">決定</button><button type="button" class="btn" data-act="close">やめる</button></div>'+
-      '<div class="row"><button type="button" class="btn" data-act="seat-up"'+(s.i===0?' disabled':'')+'>順番を前へ</button><button type="button" class="btn" data-act="seat-down"'+(s.i===last?' disabled':'')+'>順番を後ろへ</button></div>'+
-      '<div class="row"><button type="button" class="btn" data-act="seat-clear">空席に戻す</button><button type="button" class="btn warn" data-act="seat-del">この席をなくす</button></div>';
-  }
-  if(s.kind==='desk'){
-    t=tbl(s.t);
-    return '<h2>机の名前</h2><label class="f" for="desk-name">机の名前（例：A、新郎側 など）<input id="desk-name" type="text" autocomplete="off" enterkeyhint="done" maxlength="8" value="'+esc(t.label)+'"></label>'+
-      '<div class="row"><button type="button" class="btn pri" data-act="desk-ok">決定</button><button type="button" class="btn" data-act="close">やめる</button></div>';
+      (state.seats[s.c]?'<div class="row"><button type="button" class="btn warn" data-act="seat-clear">空席に戻す</button></div>':'');
   }
   if(s.kind==='reset'){
-    return '<h2>リセット</h2><p>消したあとは元に戻せません。</p>'+
-      '<div class="row"><button type="button" class="btn warn" data-act="reset-names">名前だけ全部消す</button></div>'+
-      '<div class="row"><button type="button" class="btn warn" data-act="reset-all">席の数も最初の状態に戻す</button></div>'+
-      '<div class="row"><button type="button" class="btn" data-act="close">やめる</button></div>';
+    return '<h2>リセット</h2><p>入力した氏名と所属をすべて消します。消したあとは元に戻せません。</p>'+
+      '<div class="row"><button type="button" class="btn warn" data-act="reset-ok">全部消す</button><button type="button" class="btn" data-act="close">やめる</button></div>';
   }
   if(s.kind==='pdf'){
-    return '<h2>印刷プレビュー（A4縦）</h2>'+
+    return '<h2>印刷プレビュー（A4横）</h2>'+
       '<img class="pv" alt="席次表の印刷プレビュー" src="'+s.url+'">'+
       '<div class="row"><button type="button" class="btn pri" data-act="pdf-save">PDFを保存</button><button type="button" class="btn" data-act="print">このまま印刷</button></div>'+
       '<div class="row"><button type="button" class="btn" data-act="close">閉じる</button></div>';
   }
   if(s.kind==='share'){
-    return '<h2>リンクで共有</h2><p>このリンクを送ると、相手は今の席次表を見て印刷できます。あとで名前を変えたら、もう一度リンクを送り直してください。</p>'+
+    return '<h2>リンクで共有</h2><p>このリンクを送ると、相手は今の席次表を見て印刷できます。あとで内容を変えたら、もう一度リンクを送り直してください。</p>'+
       '<input id="share-url" class="share-url" type="text" readonly value="'+esc(s.url)+'">'+
       '<div class="row"><button type="button" class="btn pri" data-act="share-copy">リンクをコピー</button>'+
       (navigator.share?'<button type="button" class="btn" data-act="share-send">LINEなどで送る</button>':'')+'</div>'+
@@ -228,35 +225,24 @@ function sheetHtml(){
   }
   return '';
 }
-
 function commitSeat(){
   var s=sheet;if(!s||s.kind!=='seat')return;
-  var x=tbl(s.t)[s.s][s.i];
-  var n=document.getElementById('seat-name'),k=document.getElementById('seat-kid'),af=document.getElementById('seat-aff');
-  if(af)x.a=af.value.replace(/\s+/g,' ').trim();
-  if(n)x.n=n.value.replace(/\s+/g,' ').trim();
-  if(k)x.c=k.checked;
+  var n=document.getElementById('seat-name'),af=document.getElementById('seat-aff'),k=document.getElementById('seat-kid');
+  var name=n?n.value.replace(/\s+/g,' ').trim():'';
+  if(!name){delete state.seats[s.c];}
+  else state.seats[s.c]={n:name,a:af?af.value.replace(/\s+/g,' ').trim():'',c:!!(k&&k.checked)};
   touch();
 }
 function onAct(act,el){
-  var t,s=sheet,arr,x;
+  var s=sheet;
   if(viewing&&!/^(pdf|pdf-save|print|close|edit|edit-ok)$/.test(act))return;
   switch(act){
-    case 'seat': sheet={kind:'seat',t:el.getAttribute('data-t'),s:el.getAttribute('data-s'),i:+el.getAttribute('data-i'),focus:'seat-name'};break;
-    case 'add': t=tbl(el.getAttribute('data-t'));arr=t[el.getAttribute('data-s')];arr.push({n:'',c:false,a:''});touch();
-      sheet={kind:'seat',t:t.id,s:el.getAttribute('data-s'),i:arr.length-1,focus:'seat-name'};break;
-    case 'desk': sheet={kind:'desk',t:el.getAttribute('data-t'),focus:'desk-name'};break;
+    case 'seat': sheet={kind:'seat',c:el.getAttribute('data-c'),focus:'seat-name'};break;
     case 'close': sheet=null;break;
     case 'seat-ok': commitSeat();sheet=null;break;
-    case 'seat-clear': x=tbl(s.t)[s.s][s.i];x.n='';x.a='';x.c=false;touch();sheet=null;break;
-    case 'seat-del': tbl(s.t)[s.s].splice(s.i,1);touch();sheet=null;break;
-    case 'seat-up': case 'seat-down':
-      commitSeat();arr=tbl(s.t)[s.s];var j=s.i+(act==='seat-up'?-1:1);
-      if(j>=0&&j<arr.length){x=arr[s.i];arr[s.i]=arr[j];arr[j]=x;s.i=j;touch();}break;
-    case 'desk-ok': x=document.getElementById('desk-name');t=tbl(s.t);t.label=(x.value.trim()||t.label);touch();sheet=null;break;
+    case 'seat-clear': delete state.seats[s.c];touch();sheet=null;break;
     case 'reset': sheet={kind:'reset'};break;
-    case 'reset-names': state.tables.forEach(function(t){SIDES.forEach(function(k){t[k].forEach(function(x){x.n='';x.a='';x.c=false;});});});touch();sheet=null;break;
-    case 'reset-all': var d=defaultState();d.title=state.title;d.sub=state.sub;state=d;touch();sheet=null;break;
+    case 'reset-ok': state.seats={};touch();sheet=null;break;
     case 'pdf': try{var c=drawSheet(state);sheet={kind:'pdf',url:c.toDataURL('image/jpeg',0.92)};}catch(e){toast('プレビューを作れませんでした。もう一度お試しください。');return;}break;
     case 'pdf-save': savePdf();return;
     case 'print': document.getElementById('printimg').src=s.url;setTimeout(function(){window.print();},60);return;
@@ -287,95 +273,66 @@ app.addEventListener('keydown',function(e){
   if(e.key==='Enter'&&!e.isComposing&&e.keyCode!==229){
     if(e.target.id==='seat-name'){e.preventDefault();var nx=document.getElementById('seat-aff');if(nx){nx.focus();try{nx.select();}catch(er){}}}
     else if(e.target.id==='seat-aff'){e.preventDefault();onAct('seat-ok');}
-    else if(e.target.id==='desk-name'){e.preventDefault();onAct('desk-ok');}
     else if(e.target.id==='title'||e.target.id==='sub'){e.target.blur();}
   }else if(e.key==='Escape'&&sheet){sheet=null;render();}
 });
 
-/* ---------- print sheet (A4 portrait, drawn in millimetres) ---------- */
+/* ---------- print sheet (A4 landscape, drawn in millimetres) ---------- */
 var PFONT='"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP","Noto Sans CJK JP","Yu Gothic","Meiryo",sans-serif';
 function drawSheet(st){
-  var S=10,c=document.createElement('canvas');c.width=2100;c.height=2970;
+  var S=10,c=document.createElement('canvas');c.width=2970;c.height=2100;
   var g=c.getContext('2d');g.scale(S,S);
-  g.fillStyle='#ffffff';g.fillRect(0,0,210,297);
-  g.textBaseline='middle';g.lineJoin='round';
+  g.fillStyle='#ffffff';g.fillRect(0,0,297,210);
+  g.textBaseline='middle';g.lineJoin='miter';
   function setFont(sz,w){g.font=(w||'400')+' '+sz+'px '+PFONT;}
   function text(s,x,y,maxW,sz,w,align,color){
     var size=sz;setFont(size,w);
-    while(g.measureText(s).width>maxW&&size>sz*0.6){size-=0.2;setFont(size,w);}
+    while(g.measureText(s).width>maxW&&size>sz*0.62){size-=0.1;setFont(size,w);}
     g.textAlign=align||'center';g.fillStyle=color||'#111111';g.fillText(s,x,y,maxW);
   }
-  function rr(x,y,w,h,r){g.beginPath();g.moveTo(x+r,y);g.arcTo(x+w,y,x+w,y+h,r);g.arcTo(x+w,y+h,x,y+h,r);g.arcTo(x,y+h,x,y,r);g.arcTo(x,y,x+w,y,r);g.closePath();}
-
+  function fits(s,maxW,sz,w){setFont(sz,w);return g.measureText(s).width<=maxW;}
+  function split2(s){
+    var mid=Math.ceil(s.length/2),best=-1,i;
+    for(i=0;i<s.length;i++){if(s.charAt(i)===' '&&(best<0||Math.abs(i-mid)<Math.abs(best-mid)))best=i;}
+    if(best>0&&best<s.length-1)return [s.slice(0,best),s.slice(best+1)];
+    return [s.slice(0,mid),s.slice(mid)];
+  }
   var ttl=(st.title||'').trim()||'席次表', sub=(st.sub||'').trim();
-  text(ttl,105,sub?20:23,180,12,'700');
-  if(sub)text(sub,105,30.5,180,5.2,'400','center','#333333');
+  text(ttl,148.5,sub?12:15,260,9.5,'700');
+  if(sub)text(sub,148.5,20.5,260,4.6,'400','center','#333333');
+  g.fillStyle='#1b1b1b';g.fillRect(98.5,26,100,6.5);text('前方',148.5,29.3,90,3.8,'700','center','#ffffff');
 
-  /* front wall */
-  var fy=38,fh=10;
-  g.lineWidth=0.35;g.strokeStyle='#555555';
-  g.strokeRect(12,fy,36,fh);text('WC入口',30,fy+fh/2,32,4.2,'400','center','#333333');
-  g.fillStyle='#1b1b1b';g.fillRect(56,fy,98,fh);text('プロジェクタースクリーン',105,fy+fh/2,92,4.8,'700','center','#ffffff');
-  g.save();g.beginPath();g.rect(162,fy,36,fh);g.clip();g.strokeStyle='#999999';g.lineWidth=0.25;
-  for(var hx=165;hx<198;hx+=3.6){g.beginPath();g.moveTo(hx,fy);g.lineTo(hx,fy+fh);g.stroke();}
-  g.restore();g.strokeStyle='#555555';g.lineWidth=0.35;g.strokeRect(162,fy,36,fh);
-  g.fillStyle='#ffffff';g.fillRect(173,fy+2,14,fh-4);text('階段',180,fy+fh/2,13,4.2,'400','center','#333333');
-
-  /* table grid */
-  var top=56,bottom=281,COLX=[12,109],COLW=89,DESKW=20,PAD=2,CHIPW=(COLW-DESKW-PAD*2)/2;
-  function rowsOf(t){return Math.max(t.L.length,t.R.length,1)+(t.T.length?1:0)+(t.B.length?1:0);}
-  var bandRows=[],sum=0,i;
-  for(i=0;i<3;i++){bandRows[i]=Math.max(rowsOf(st.tables[i]),rowsOf(st.tables[i+3]));sum+=bandRows[i];}
-  var avail=bottom-top,minGap=7;
-  var rowH=Math.min(19,(avail-minGap*2)/sum);
-  var gap=Math.min(26,(avail-rowH*sum)/2);
-  var nameSz=Math.min(7.2,rowH*0.52);
-
-  function chip(s,x,y,w,h){
-    var kid=s.c&&s.n, ih=kid?Math.min(h-1.6,h*0.74):h-1.6, iy=y+(h-ih)/2;
-    rr(x,iy,w,ih,Math.min(1.6,ih/2));
-    if(!s.n){g.setLineDash([1,0.8]);g.strokeStyle='#bbbbbb';g.lineWidth=0.25;g.stroke();g.setLineDash([]);return;}
-    g.fillStyle=kid?'#eeeeee':'#ffffff';g.fill();
-    g.strokeStyle='#444444';g.lineWidth=kid?0.25:0.4;g.stroke();
-    var ns=kid?nameSz*0.82:nameSz;
-    if(s.a){
-      var as=Math.max(2.4,Math.min(3.6,ih*0.24)),n2=Math.min(ns,ih*0.5),blockH=as+n2+ih*0.06,ty=y+h/2-blockH/2;
-      text(s.a,x+w/2,ty+as/2,w-2.4,as,'400','center','#444444');
-      text(s.n,x+w/2,ty+as+ih*0.06+n2/2+0.1,w-2.4,n2,kid?'400':'700');
-    }else text(s.n,x+w/2,y+h/2+0.1,w-2.4,ns,kid?'400':'700');
+  var X0=10,W=277,GAP=7,BW=(W-GAP*3)/4,CW=BW/3,top=39,bottom=201,DH=20,pitch=(bottom-top-DH)/(ROWS-1);
+  var n=0;
+  for(var r=0;r<ROWS;r++){
+    var y=top+r*pitch;
+    for(var b=0;b<BLOCKS;b++){
+      var bx=X0+b*(BW+GAP);
+      for(var p=0;p<3;p++){
+        var code=codeAt(b,p,r),s=st.seats[code],x=bx+p*CW,cx=x+CW/2,mw=CW-1.8;
+        if(s&&s.c){g.fillStyle='#eeeeee';g.fillRect(x,y,CW,DH);}
+        if(s){
+          n++;
+          text(code,cx,y+2.9,mw,2.9,'400','center','#333333');
+          var ny=y+13.6;
+          if(s.a){
+            if(fits(s.a,mw,2.5,'400'))text(s.a,cx,y+6.8,mw,2.5,'400','center','#333333');
+            else{var two=split2(s.a);text(two[0],cx,y+6.1,mw,2.3,'400','center','#333333');text(two[1],cx,y+8.9,mw,2.3,'400','center','#333333');ny=y+14.4;}
+          }else ny=y+11.8;
+          text(s.n,cx,ny,mw,4.8,s.c?'400':'700');
+        }else if(p!==1){
+          text(code,cx,y+2.9,mw,2.9,'400','center','#9a9a9a');
+        }
+      }
+      g.strokeStyle='#111111';g.lineWidth=0.35;g.strokeRect(bx,y,BW,DH);
+      g.beginPath();g.moveTo(bx+CW,y);g.lineTo(bx+CW,y+DH);g.moveTo(bx+CW*2,y);g.lineTo(bx+CW*2,y+DH);g.stroke();
+    }
   }
-  function endRow(list,cx,y){
-    var n=list.length,w=Math.min(CHIPW,(COLW-(n-1)*PAD)/n),x=cx-(n*w+(n-1)*PAD)/2;
-    for(var k=0;k<n;k++)chip(list[k],x+k*(w+PAD),y,w,rowH);
-  }
-  function drawTable(t,colx,bandTop,bandH){
-    var body=Math.max(t.L.length,t.R.length,1),h=rowsOf(t)*rowH,y=bandTop+(bandH-h)/2,cx=colx+COLW/2,k;
-    if(t.T.length){endRow(t.T,cx,y);y+=rowH;}
-    var dh=body*rowH,dx=cx-DESKW/2;
-    rr(dx,y+0.8,DESKW,dh-1.6,1.5);g.fillStyle='#efe9dc';g.fill();g.strokeStyle='#222222';g.lineWidth=0.6;g.stroke();
-    var lblSz=Math.min(9,dh*0.42);
-    text(t.label,cx,y+dh/2-(dh>16?2.2:0),DESKW-3,lblSz,'700');
-    if(dh>16)text(seatedOf(t)+'名',cx,y+dh/2+lblSz*0.5+1.4,DESKW-3,3.4,'400','center','#555555');
-    var lo=(body-t.L.length)*rowH/2,ro=(body-t.R.length)*rowH/2;
-    for(k=0;k<t.L.length;k++)chip(t.L[k],colx,y+lo+k*rowH,CHIPW,rowH);
-    for(k=0;k<t.R.length;k++)chip(t.R[k],colx+COLW-CHIPW,y+ro+k*rowH,CHIPW,rowH);
-    y+=dh;
-    if(t.B.length)endRow(t.B,cx,y);
-  }
-  function seatedOf(t){var n=0;['L','R','T','B'].forEach(function(s){t[s].forEach(function(x){if(x.n)n++;});});return n;}
-  var y=top,all=0;
-  for(i=0;i<3;i++){
-    var bh=bandRows[i]*rowH;
-    drawTable(st.tables[i],COLX[0],y,bh);
-    drawTable(st.tables[i+3],COLX[1],y,bh);
-    all+=seatedOf(st.tables[i])+seatedOf(st.tables[i+3]);
-    y+=bh+gap;
-  }
-  text('合計 '+all+' 名',198,289,60,4,'400','right','#555555');
+  text('合計 '+n+' 名',287,206,60,3.6,'400','right','#555555');
   return c;
 }
 
-/* ---------- PDF (one A4 page holding the JPEG) ---------- */
+/* ---------- PDF (one A4 landscape page holding the JPEG) ---------- */
 function b64bytes(dataUrl){
   var b=atob(dataUrl.slice(dataUrl.indexOf(',')+1)),a=new Uint8Array(b.length);
   for(var i=0;i<b.length;i++)a[i]=b.charCodeAt(i);return a;
@@ -387,11 +344,11 @@ function makePdf(jpeg,wpx,hpx){
   put('%PDF-1.4\n%\xE2\xE3\xCF\xD3\n');
   obj(1,'<< /Type /Catalog /Pages 2 0 R >>');
   obj(2,'<< /Type /Pages /Kids [3 0 R] /Count 1 >>');
-  obj(3,'<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595.28 841.89] /Resources << /XObject << /Im0 4 0 R >> >> /Contents 5 0 R >>');
+  obj(3,'<< /Type /Page /Parent 2 0 R /MediaBox [0 0 841.89 595.28] /Resources << /XObject << /Im0 4 0 R >> >> /Contents 5 0 R >>');
   offs[4]=len;
   put('4 0 obj\n<< /Type /XObject /Subtype /Image /Width '+wpx+' /Height '+hpx+' /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length '+jpeg.length+' >>\nstream\n');
   put(jpeg);put('\nendstream\nendobj\n');
-  var cs='q 595.28 0 0 841.89 0 0 cm /Im0 Do Q';
+  var cs='q 841.89 0 0 595.28 0 0 cm /Im0 Do Q';
   obj(5,'<< /Length '+cs.length+' >>\nstream\n'+cs+'\nendstream');
   var xref=len,x='xref\n0 6\n0000000000 65535 f \n';
   for(var n=1;n<=5;n++)x+=('0000000000'+offs[n]).slice(-10)+' 00000 n \n';
@@ -404,10 +361,9 @@ function pdfBytes(){var c=drawSheet(state);return makePdf(b64bytes(c.toDataURL('
 function savePdf(){
   var bytes;
   try{bytes=pdfBytes();}catch(e){toast('PDFを作れませんでした。もう一度お試しください。');return;}
-  var name='sekijihyo.pdf';
   try{
     var url=URL.createObjectURL(new Blob([bytes],{type:'application/pdf'}));
-    var a=document.createElement('a');a.href=url;a.download=name;a.style.display='none';
+    var a=document.createElement('a');a.href=url;a.download='sekijihyo.pdf';a.style.display='none';
     document.body.appendChild(a);a.click();
     setTimeout(function(){document.body.removeChild(a);URL.revokeObjectURL(url);},4000);
     toast('PDFを保存しました。');
