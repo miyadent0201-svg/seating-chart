@@ -26,7 +26,7 @@ body{background:var(--bg);color:var(--ink);font-family:var(--font);font-size:15p
 button,input{font:inherit;color:inherit}
 button{cursor:pointer;-webkit-tap-highlight-color:transparent}
 :focus-visible{outline:3px solid var(--accent);outline-offset:2px}
-.wrap{max-width:760px;margin:0 auto;padding:14px 12px 160px;display:flex;flex-direction:column;gap:12px}
+.wrap{max-width:1100px;margin:0 auto;padding:14px 12px 160px;display:flex;flex-direction:column;gap:12px}
 .head{display:flex;flex-direction:column;gap:6px}
 .head input{width:100%;border:1px solid transparent;border-bottom-color:var(--line);background:transparent;padding:4px 2px;border-radius:4px}
 .head input:focus{border-color:var(--accent);background:var(--surface);outline:none}
@@ -57,7 +57,7 @@ button{cursor:pointer;-webkit-tap-highlight-color:transparent}
 .chair.kid::after{content:"（子）";font-weight:400;font-size:10px;color:var(--muted)}
 .add{min-height:30px;border:1.5px dashed var(--line);background:transparent;border-radius:8px;color:var(--muted);font-size:12px;padding:2px}
 .bar{position:fixed;left:0;right:0;bottom:0;background:var(--surface);border-top:1px solid var(--line);padding:8px 12px calc(8px + env(safe-area-inset-bottom,0px));z-index:5}
-.bar-in{max-width:760px;margin:0 auto;display:flex;flex-direction:column;gap:6px}
+.bar-in{max-width:1100px;margin:0 auto;display:flex;flex-direction:column;gap:6px}
 .status{font-size:12px;color:var(--muted);display:flex;justify-content:space-between;gap:8px;font-variant-numeric:tabular-nums}
 .btns{display:flex;gap:8px}
 .btn{flex:1;min-height:46px;border-radius:8px;border:1.5px solid var(--line);background:var(--surface);font-weight:700;padding:6px 8px}
@@ -101,6 +101,21 @@ button{cursor:pointer;-webkit-tap-highlight-color:transparent}
 .seat.on{box-shadow:inset 0 0 0 2px var(--accent)}
 .seat.kid{background:var(--child)}
 .seat:focus-visible{outline-offset:-3px}
+
+.seat{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+.seat .trees{display:flex;align-items:center;justify-content:center;gap:1px;font-size:10px;font-weight:700;color:#1f8a3b;line-height:1}
+.seat .tree{width:11px;height:13px;fill:#1f8a3b}
+.seat .kd{font-size:9px;color:var(--muted)}
+.seat.bad{box-shadow:inset 0 0 0 3px var(--danger)}
+.seat.dragging{opacity:.35}
+.seat.drop{box-shadow:inset 0 0 0 4px var(--accent);background:var(--child)}
+.drag-on,.drag-on *{cursor:grabbing !important}
+.ghost{position:fixed;left:0;top:0;z-index:40;pointer-events:none;background:var(--accent);color:var(--accent-ink);font-weight:700;font-size:14px;padding:6px 10px;border-radius:8px;box-shadow:0 4px 14px rgba(0,0,0,.3);white-space:nowrap}
+.warn-box{border:1.5px solid var(--danger);border-radius:8px;padding:8px 10px;font-size:13px;background:var(--surface)}
+.warn-box strong{color:var(--danger)}
+.warn-box ul{margin:4px 0 0;padding-left:18px}
+.bad-text{color:var(--danger) !important}
+.sheet select,.sheet textarea,.sheet input[type=number],.sheet input[type=file]{border:1.5px solid var(--line);border-radius:8px;padding:10px;font-size:16px;background:var(--bg);color:var(--ink);width:100%;font-family:inherit}
 </style></head><body><div id="app"></div><div id="printbox"></div><style id="pagestyle"></style><script>
 (function(){
 'use strict';
@@ -117,33 +132,15 @@ function clean(o){
   Object.keys(o.seats).forEach(function(c){
     var x=o.seats[c];if(!validCode(c)||!x)return;
     var n=String(x.n||'').trim();if(!n)return;
-    out.seats[c]={n:n,a:String(x.a||'').trim(),c:!!x.c};
+    var k=(x.k==='p'||x.k==='e')?x.k:(x.c&&!x.k?'e':'a'),t=parseInt(x.t,10);
+    out.seats[c]={n:n,a:String(x.a||'').trim(),k:k,t:(t>0&&t<100)?t:0,f:String(x.f||'').trim()};
   });
   return out;
-}
-function encodeState(st){
-  var o={title:st.title,sub:st.sub,seats:st.seats};
-  return btoa(unescape(encodeURIComponent(JSON.stringify(o)))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
-}
-function decodeState(h){
-  try{
-    var b=h.replace(/-/g,'+').replace(/_/g,'/');while(b.length%4)b+='=';
-    var o=clean(JSON.parse(decodeURIComponent(escape(atob(b)))));
-    if(o)o.rev=0;return o;
-  }catch(e){return null;}
 }
 function loadDraft(){
   var d=null;try{d=JSON.parse(localStorage.getItem(LS_KEY));}catch(e){}
   return clean(d);
 }
-function load(){
-  var m=/^#s=([A-Za-z0-9_-]+)$/.exec(location.hash||'');
-  var shared=m?decodeState(m[1]):null;
-  if(shared){state=shared;viewing=true;return;}
-  viewing=false;
-  state=loadDraft()||defaultState();
-}
-function shareUrl(){return location.href.split('#')[0]+'#s='+encodeState(state);}
 function touch(){
   if(viewing)return;
   state.rev=Date.now();
@@ -151,13 +148,17 @@ function touch(){
 }
 function esc(s){return String(s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
 function total(){return Object.keys(state.seats).length;}
+function treeTotal(){var n=0;Object.keys(state.seats).forEach(function(c){n+=state.seats[c].t||0;});return n;}
+var TREE='<svg class="tree" viewBox="0 0 12 14" aria-hidden="true"><path d="M6 0l4 5H8l3.5 4.5H7V14H5V9.5H.5L4 5H2z"/></svg>';
+function treesHtml(t){if(!t)return '';if(t>3)return '<span class="trees">'+TREE+'×'+t+'</span>';var h='';for(var i=0;i<t;i++)h+=TREE;return '<span class="trees">'+h+'</span>';}
+var KIND={a:'',e:'小学生',p:'未就学'};
 function codeAt(block,pos,row){return COLS.charAt(block*3+pos)+(row+1);}
 
 /* ---------- screen ---------- */
-function seatHtml(code,mid){
+function seatHtml(code,mid,bad){
   var s=state.seats[code];
-  var cls='seat'+(mid?' mid':'')+(s?' on':'')+(s&&s.c?' kid':'');
-  var body=s?((s.a?'<small class="aff">'+esc(s.a)+'</small>':'')+'<span class="nm">'+esc(s.n)+'</span>'):'<span class="empty">'+(mid?(viewing?'':'＋'):'空席')+'</span>';
+  var cls='seat'+(mid?' mid':'')+(s?' on':'')+(s&&s.k!=='a'?' kid':'')+(bad?' bad':'');
+  var body=s?(treesHtml(s.t)+(s.a?'<small class="aff">'+esc(s.a)+'</small>':'')+'<span class="nm">'+esc(s.n)+'</span>'+(s.k!=='a'?'<small class="kd">'+KIND[s.k]+'</small>':'')):'<span class="empty">'+(mid?(viewing?'':'＋'):'空席')+'</span>';
   return '<button type="button" class="'+cls+'" data-act="seat" data-c="'+code+'" aria-label="'+code+'の席 '+(s?esc(s.n):(mid?'真ん中・未使用':'空席'))+'"><small class="code">'+code+'</small>'+body+'</button>';
 }
 function statusText(){return viewing?'共有された席次表（見るだけ）':'この端末に自動保存しています';}
@@ -165,20 +166,22 @@ function render(){
   var keep=document.activeElement&&document.activeElement.id;
   var sc=document.getElementById('scroll'),sl=sc?sc.scrollLeft:0;
   var ro=viewing?' readonly':'';
+  var warns=validate(state),badSet={};warns.forEach(function(w){badSet[w.code]=1;});
   var h='<div class="wrap'+(viewing?' view':'')+'"><header class="head">'+
     '<input id="title" type="text" aria-label="タイトル" placeholder="タイトル" value="'+esc(state.title)+'"'+ro+'>'+
     '<input id="sub" type="text" aria-label="日付・会の名前" placeholder="日付・会の名前（印刷に入ります）" value="'+esc(state.sub)+'"'+ro+'>'+
-    '<p class="hint">'+(viewing?'送られてきた席次表です。「席次表PDF」「席札PDF」から印刷できます。':'席を押して氏名と所属病院名を入れます。机の真ん中（＋）の席も、押せば使えます。表は横に動かせます。')+'</p></header>'+
+    '<p class="hint">'+(viewing?'送られてきた席次表です。「席次表PDF」「席札PDF」から印刷できます。':'席を押すと氏名などを直せます。席を長押ししてから動かすと、ほかの席と入れ替えられます。表は横に動かせます。')+'</p>'+
+    (viewing?'':'<div class="row"><button type="button" class="btn" data-act="import">名簿（Excel）から自動で席を決める</button></div>')+'</header>'+warnHtml(warns)+
     '<div class="room"><div id="scroll" class="scroll"><div class="grid"><div class="frontbar">前方</div>';
   for(var r=0;r<ROWS;r++){
     h+='<div class="rw">';
     for(var b=0;b<BLOCKS;b++){
-      h+='<div class="desk3">'+seatHtml(codeAt(b,0,r),false)+seatHtml(codeAt(b,1,r),true)+seatHtml(codeAt(b,2,r),false)+'</div>';
+      h+='<div class="desk3">'+seatHtml(codeAt(b,0,r),false,badSet[codeAt(b,0,r)])+seatHtml(codeAt(b,1,r),true,badSet[codeAt(b,1,r)])+seatHtml(codeAt(b,2,r),false,badSet[codeAt(b,2,r)])+'</div>';
     }
     h+='</div>';
   }
   h+='</div></div></div></div>'+
-    '<div class="bar"><div class="bar-in"><div class="status"><span id="st">'+esc(statusText())+'</span><span>合計 '+total()+' 名</span></div>'+
+    '<div class="bar"><div class="bar-in"><div class="status"><span id="st">'+esc(statusText())+'</span><span>合計 '+total()+' 名・ツリー '+treeTotal()+' 個</span></div>'+
     '<div class="btns"><button type="button" class="btn pri" data-act="pdf">席次表PDF</button><button type="button" class="btn pri" data-act="cards">席札PDF</button></div>'+
     '<div class="btns">'+(viewing?'<button type="button" class="btn" data-act="edit">自分で編集する</button>'
       :'<button type="button" class="btn" data-act="share">リンクで共有</button><button type="button" class="btn slim warn" data-act="reset">リセット</button>')+
@@ -190,19 +193,42 @@ function render(){
   if(sheet&&sheet.focus){var f=document.getElementById(sheet.focus);if(f){f.focus();try{f.select();}catch(e){}}sheet.focus=null;}
   else if(keep&&!sheet){var k=document.getElementById(keep);if(k)k.focus();}
 }
+function warnHtml(w){
+  if(!w.length)return '';
+  var h='<div class="warn-box" role="alert"><strong>確認が必要な席が '+w.length+' 件あります</strong><ul>';
+  for(var i=0;i<w.length&&i<6;i++)h+='<li>'+esc(w[i].code)+'：'+esc(w[i].msg)+'</li>';
+  if(w.length>6)h+='<li>ほか '+(w.length-6)+' 件</li>';
+  return h+'</ul></div>';
+}
 function refreshStatus(){var el=document.getElementById('st');if(el)el.textContent=statusText();}
 function toast(m){toastMsg=m;clearTimeout(toastTimer);toastTimer=setTimeout(function(){toastMsg='';render();},3500);render();}
 
 function sheetHtml(){
   var s=sheet,x;
   if(s.kind==='seat'){
-    x=state.seats[s.c]||{n:'',a:'',c:false};
+    x=state.seats[s.c]||{n:'',a:'',k:'a',t:0};
     return '<h2>'+s.c+' の席</h2>'+
       '<label class="f" for="seat-name">氏名<input id="seat-name" type="text" autocomplete="off" enterkeyhint="next" value="'+esc(x.n)+'"></label>'+
       '<label class="f" for="seat-aff">所属病院名（空欄でもかまいません）<input id="seat-aff" type="text" autocomplete="off" enterkeyhint="done" value="'+esc(x.a)+'"></label>'+
-      '<label class="c" for="seat-kid"><input id="seat-kid" type="checkbox"'+(x.c?' checked':'')+'>お子様の席</label>'+
+      '<label class="f" for="seat-kind">区分<select id="seat-kind"><option value="a"'+(x.k==='a'?' selected':'')+'>大人</option><option value="e"'+(x.k==='e'?' selected':'')+'>小学生（F小）</option><option value="p"'+(x.k==='p'?' selected':'')+'>未就学（F未）</option></select></label>'+
+      '<label class="f" for="seat-trees">ツリーの数（制作）<input id="seat-trees" type="number" inputmode="numeric" min="0" max="20" value="'+(x.t||0)+'"></label>'+
       '<div class="row"><button type="button" class="btn pri" data-act="seat-ok">決定</button><button type="button" class="btn" data-act="close">やめる</button></div>'+
       (state.seats[s.c]?'<div class="row"><button type="button" class="btn warn" data-act="seat-clear">空席に戻す</button></div>':'');
+  }
+  if(s.kind==='import'){
+    return '<h2>名簿から自動で席を決める</h2><p>Excelファイル（.xlsx）を選ぶか、表をコピーして下の欄に貼り付けてください。「医療機関・氏名・ふりがな・職種・制作」の見出しの行も含めてください。</p>'+
+      '<label class="f" for="roster-file">Excelファイルを選ぶ<input id="roster-file" type="file" accept=".xlsx,.csv,.tsv,.txt,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv"></label>'+
+      '<label class="f" for="roster-text">または、表を貼り付ける<textarea id="roster-text" rows="5" placeholder="表をコピーして、ここに貼り付け"></textarea></label>'+
+      '<div class="row"><button type="button" class="btn pri" data-act="import-text">貼り付けた表を読み込む</button><button type="button" class="btn" data-act="close">やめる</button></div>';
+  }
+  if(s.kind==='import-ok'){
+    var pl=s.plan,kids=s.people.filter(function(p){return p.k!=='a';}).length,ws=validate({seats:pl.seats});
+    var h='<h2>名簿を読み込みました</h2><p>'+pl.people+' 名・'+pl.clinics+' 医院（うち子ども '+kids+' 名）。同じ医院が固まり、子どもは保護者と同じ机になるように席を決めます。</p>';
+    if(pl.packed)h+='<p>人数が多いため、大人だけの机も真ん中の席まで使います。</p>';
+    if(pl.unplaced.length)h+='<p class="bad-text">席が足りず、次の '+pl.unplaced.length+' 名は入りませんでした：'+esc(pl.unplaced.map(function(p){return p.name;}).join('、'))+'</p>';
+    if(ws.length)h+='<p class="bad-text">保護者が見つからない子どもなど、確認が必要な席が '+ws.length+' 件あります。席を決めたあと画面の上に表示されます。</p>';
+    if(total())h+='<p class="bad-text">今入っている席はすべて置き換わります。</p>';
+    return h+'<div class="row"><button type="button" class="btn pri" data-act="import-apply">この内容で席を決める</button><button type="button" class="btn" data-act="close">やめる</button></div>';
   }
   if(s.kind==='reset'){
     return '<h2>リセット</h2><p>入力した氏名と所属をすべて消します。消したあとは元に戻せません。</p>'+
@@ -231,10 +257,14 @@ function sheetHtml(){
 }
 function commitSeat(){
   var s=sheet;if(!s||s.kind!=='seat')return;
-  var n=document.getElementById('seat-name'),af=document.getElementById('seat-aff'),k=document.getElementById('seat-kid');
-  var name=n?n.value.replace(/\s+/g,' ').trim():'';
+  var n=document.getElementById('seat-name'),af=document.getElementById('seat-aff'),k=document.getElementById('seat-kind'),tr=document.getElementById('seat-trees');
+  var name=n?n.value.replace(/[\s\u3000]+/g,' ').trim():'',old=state.seats[s.c];
   if(!name){delete state.seats[s.c];}
-  else state.seats[s.c]={n:name,a:af?af.value.replace(/\s+/g,' ').trim():'',c:!!(k&&k.checked)};
+  else{
+    var t=tr?parseInt(tr.value,10):0,kv=k?k.value:'a';
+    state.seats[s.c]={n:name,a:af?af.value.replace(/[\s\u3000]+/g,' ').trim():'',k:(kv==='p'||kv==='e')?kv:'a',t:(t>0&&t<100)?t:0,
+      f:(old&&old.f&&surname(old.n)===surname(name))?old.f:''};
+  }
   touch();
 }
 function onAct(act,el){
@@ -245,6 +275,13 @@ function onAct(act,el){
     case 'close': sheet=null;break;
     case 'seat-ok': commitSeat();sheet=null;break;
     case 'seat-clear': delete state.seats[s.c];touch();sheet=null;break;
+    case 'import': sheet={kind:'import'};break;
+    case 'import-text':
+      var ta=document.getElementById('roster-text'),txt=ta?ta.value:'';
+      if(!txt.trim()){toast('表を貼り付けるか、ファイルを選んでください。');return;}
+      try{importDone(rowsToPeople(parseDelimited(txt)));}catch(e){toast(importError(e));}
+      return;
+    case 'import-apply': state.seats=s.plan.seats;touch();sheet=null;break;
     case 'reset': sheet={kind:'reset'};break;
     case 'reset-ok': state.seats={};touch();sheet=null;break;
     case 'pdf': try{sheet={kind:'pdf',mode:'chart',urls:[drawSheet(state).toDataURL('image/jpeg',0.92)]};}catch(e){toast('プレビューを作れませんでした。もう一度お試しください。');return;}break;
@@ -258,7 +295,7 @@ function onAct(act,el){
       pb.className=land?'ls':'pt';pb.innerHTML=hh;
       document.getElementById('pagestyle').textContent='@page{size:A4 '+(land?'landscape':'portrait')+';margin:0}';
       setTimeout(function(){window.print();},120);return;
-    case 'share': sheet={kind:'share',url:shareUrl()};break;
+    case 'share': shareUrl().then(function(u){sheet={kind:'share',url:u};render();},function(){toast('リンクを作れませんでした。もう一度お試しください。');});return;
     case 'share-copy': copyText(s.url);return;
     case 'share-send': try{navigator.share({title:(state.title||'席次表'),url:s.url}).catch(function(){});}catch(e){}return;
     case 'edit': sheet={kind:'edit'};break;
@@ -273,8 +310,16 @@ app.addEventListener('click',function(e){
   if(!el||el===app)return;
   var act=el.getAttribute('data-act');
   if(act==='ov'){if(e.target===el){sheet=null;render();}return;}
-  if(el.disabled)return;
+  if(el.disabled||suppressClick)return;
   onAct(act,el);
+});
+app.addEventListener('change',function(e){
+  if(e.target.id!=='roster-file')return;
+  var f=e.target.files&&e.target.files[0];if(!f)return;
+  var rd=new FileReader();
+  rd.onerror=function(){toast(importError());};
+  rd.onload=function(){bytesPeople(new Uint8Array(rd.result)).then(importDone,function(err){toast(importError(err));});};
+  rd.readAsArrayBuffer(f);
 });
 app.addEventListener('input',function(e){
   var id=e.target.id;
@@ -309,6 +354,15 @@ function drawSheet(st){
     if(best>0&&best<s.length-1)return [s.slice(0,best),s.slice(best+1)];
     return [s.slice(0,mid),s.slice(mid)];
   }
+  function tree(cx,base,h){
+    var u=h/14,x=cx-6*u,y=base-h,pts=[[6,0],[10,5],[8,5],[11.5,9.5],[7,9.5],[7,14],[5,14],[5,9.5],[0.5,9.5],[4,5],[2,5]];
+    g.beginPath();pts.forEach(function(p,i){if(i)g.lineTo(x+p[0]*u,y+p[1]*u);else g.moveTo(x+p[0]*u,y+p[1]*u);});g.closePath();g.fillStyle='#1f8a3b';g.fill();
+  }
+  function trees(cx,base,n){
+    var h=5.6,step=5.4;
+    if(n>3){tree(cx-3,base,h);text('×'+n,cx+3.2,base-h/2,8,3.6,'700','center','#1f8a3b');return;}
+    for(var i=0;i<n;i++)tree(cx+(i-(n-1)/2)*step,base,h);
+  }
   var ttl=(st.title||'').trim()||'席次表', sub=(st.sub||'').trim();
   text(ttl,148.5,sub?12:15,260,9.5,'700');
   if(sub)text(sub,148.5,20.5,260,4.6,'400','center','#333333');
@@ -322,7 +376,8 @@ function drawSheet(st){
       var bx=X0+b*(BW+GAP);
       for(var p=0;p<3;p++){
         var code=codeAt(b,p,r),s=st.seats[code],x=bx+p*CW,cx=x+CW/2,mw=CW-1.8;
-        if(s&&s.c){g.fillStyle='#eeeeee';g.fillRect(x,y,CW,DH);}
+        if(s&&s.k!=='a'){g.fillStyle='#eeeeee';g.fillRect(x,y,CW,DH);}
+        if(s&&s.t)trees(cx,y-0.9,s.t);
         if(s){
           n++;
           text(code,cx,y+2.9,mw,2.9,'400','center','#333333');
@@ -331,7 +386,7 @@ function drawSheet(st){
             if(fits(s.a,mw,2.5,'400'))text(s.a,cx,y+6.8,mw,2.5,'400','center','#333333');
             else{var two=split2(s.a);text(two[0],cx,y+6.1,mw,2.3,'400','center','#333333');text(two[1],cx,y+8.9,mw,2.3,'400','center','#333333');ny=y+14.4;}
           }else ny=y+11.8;
-          text(s.n,cx,ny,mw,4.8,s.c?'400':'700');
+          text(s.n,cx,ny,mw,4.8,s.k!=='a'?'400':'700');
         }else if(p!==1){
           text(code,cx,y+2.9,mw,2.9,'400','center','#9a9a9a');
         }
@@ -340,7 +395,8 @@ function drawSheet(st){
       g.beginPath();g.moveTo(bx+CW,y);g.lineTo(bx+CW,y+DH);g.moveTo(bx+CW*2,y);g.lineTo(bx+CW*2,y+DH);g.stroke();
     }
   }
-  text('合計 '+n+' 名',287,206,60,3.6,'400','right','#555555');
+  var tt=0;Object.keys(st.seats).forEach(function(c){tt+=st.seats[c].t||0;});
+  text('合計 '+n+' 名・ツリー '+tt+' 個',287,206,90,3.6,'400','right','#555555');
   return c;
 }
 
@@ -450,9 +506,362 @@ function copyText(t){
   else fallback();
 }
 
-load();
-render();
-window.addEventListener('hashchange',function(){sheet=null;load();render();});
-window.__sekiji={shareUrl:shareUrl,pdfBytes:pdfBytes,clinicColors:function(){return clinicColors(state);},getState:function(){return state;}};
+/* ---------- roster import: spreadsheet rows -> people ---------- */
+function norm(s){return String(s==null?'':s).replace(/[\s　]+/g,' ').trim();}
+function surname(s){return norm(s).split(' ')[0]||'';}
+function kindOf(role){var r=norm(role);if(r.indexOf('未')>=0)return 'p';if(r.indexOf('小')>=0)return 'e';return 'a';}
+function rowsToPeople(rows){
+  var hi=-1,ci={},i,j;
+  for(i=0;i<rows.length&&hi<0;i++){var rw=rows[i]||[];for(j=0;j<rw.length;j++){if(norm(rw[j]).replace(/ /g,'')==='氏名'){hi=i;break;}}}
+  if(hi<0)throw new Error('noheader');
+  for(j=0;j<rows[hi].length;j++){
+    var t=norm(rows[hi][j]).replace(/ /g,'');
+    if(t==='氏名')ci.name=j;
+    else if(/ふりがな|フリガナ|よみ/.test(t)){if(ci.kana==null)ci.kana=j;}
+    else if(/医療機関|医院|所属|クリニック|病院/.test(t)){if(ci.clinic==null)ci.clinic=j;}
+    else if(/職種/.test(t)){if(ci.role==null)ci.role=j;}
+    else if(/制作|製作/.test(t)){if(ci.trees==null)ci.trees=j;}
+  }
+  var people=[],clinic='';
+  for(i=hi+1;i<rows.length;i++){
+    var r=rows[i]||[];
+    var get=function(k){return ci[k]==null?'':norm(r[ci[k]]);};
+    var c=get('clinic');if(c)clinic=c;
+    var name=get('name'),kana=get('kana');if(!name&&!kana)continue;
+    var tr=parseInt(get('trees'),10);
+    people.push({name:name||kana,rawName:name,kana:kana,clinic:clinic,k:kindOf(get('role')),t:(tr>0&&tr<100)?tr:0});
+  }
+  var maps={};
+  people.forEach(function(p){if(p.rawName&&p.kana){var m=maps[p.clinic]||(maps[p.clinic]={});m[surname(p.rawName)]=surname(p.kana);}});
+  people.forEach(function(p){var m=maps[p.clinic]||{};p.f=p.kana?surname(p.kana):(m[surname(p.rawName)]||surname(p.rawName));});
+  return people;
+}
+
+/* ---------- automatic seating ---------- */
+function planSeats(people){
+  var clinics=[],cmap={};
+  people.forEach(function(p){
+    var c=cmap['c:'+p.clinic];if(!c){c=cmap['c:'+p.clinic]={fams:[],fmap:{}};clinics.push(c);}
+    var f=c.fmap['f:'+p.f];if(!f){f=c.fmap['f:'+p.f]=[];c.fams.push(f);}
+    f.push(p);
+  });
+  function layout(d){
+    var a=d.a,k=d.k;
+    if(a.length===2)return [a[0],k[0]||null,a[1]];
+    if(a.length===1&&k.length===2)return [k[0],a[0],k[1]];
+    if(a.length===1&&k.length===1)return k[0].k==='p'?[a[0],k[0],null]:[a[0],null,k[0]];
+    if(a.length===1)return [a[0],null,null];
+    if(k.length===2)return [k[0],null,k[1]];
+    return [k[0],null,null];
+  }
+  function build(per){
+    return clinics.map(function(c){
+      var desks=[],pool=[];
+      c.fams.forEach(function(f){
+        var ad=f.filter(function(p){return p.k==='a';});
+        var kids=f.filter(function(p){return p.k==='p';}).concat(f.filter(function(p){return p.k==='e';}));
+        if(!kids.length){pool=pool.concat(ad);return;}
+        var nd=Math.max(Math.ceil(kids.length/2),Math.min(ad.length,kids.length)),ds=[],i;
+        for(i=0;i<nd;i++)ds.push({a:ad.length?[ad.shift()]:[],k:[]});
+        kids.forEach(function(kid){
+          var best=null,bs=99;
+          ds.forEach(function(d){if(d.k.length>=2)return;var sc=d.k.length*2+(d.a.length?0:1);if(sc<bs){bs=sc;best=d;}});
+          best.k.push(kid);
+        });
+        ds.forEach(function(d){if(ad.length&&d.a.length===1&&d.k.length===1)d.a.push(ad.shift());});
+        ds.forEach(function(d){desks.push(layout(d));});
+        pool=pool.concat(ad);
+      });
+      while(pool.length){
+        var take=pool.splice(0,per);
+        desks.push(take.length===3?[take[0],take[1],take[2]]:[take[0]||null,null,take[1]||null]);
+      }
+      return desks;
+    });
+  }
+  function count(pl){var n=0;pl.forEach(function(d){n+=d.length;});return n;}
+  var MAX=BLOCKS*ROWS,plan=build(2),packed=false;
+  if(count(plan)>MAX){plan=build(3);packed=true;}
+  var seats={},idx=0,unplaced=[];
+  plan.forEach(function(desks){
+    desks.forEach(function(d){
+      if(idx>=MAX){d.forEach(function(p){if(p)unplaced.push(p);});return;}
+      /* snake order: down the first block, up the next, so a clinic that crosses into the next block stays side by side */
+      var b=Math.floor(idx/ROWS),r=b%2===0?idx%ROWS:ROWS-1-idx%ROWS;
+      d.forEach(function(p,pos){if(p)seats[codeAt(b,pos,r)]={n:p.name,a:p.clinic,k:p.k,t:p.t,f:p.f};});
+      idx++;
+    });
+  });
+  return {seats:seats,unplaced:unplaced,packed:packed,people:people.length,clinics:clinics.length};
+}
+
+/* ---------- rule check (shown as warnings, never blocks) ---------- */
+function famKey(s){return (s.a||'')+'|'+(s.f||surname(s.n));}
+function validate(st){
+  var w=[];
+  for(var r=0;r<ROWS;r++)for(var b=0;b<BLOCKS;b++){
+    var codes=[codeAt(b,0,r),codeAt(b,1,r),codeAt(b,2,r)],ss=codes.map(function(c){return st.seats[c]||null;});
+    var occ=ss.filter(function(x){return x;});
+    ss.forEach(function(s,pos){
+      if(!s||s.k==='a')return;
+      var fk=famKey(s),ok;
+      if(s.k==='p'){
+        ok=[pos-1,pos+1].some(function(q){var o=ss[q];return o&&o.k==='a'&&famKey(o)===fk;});
+        if(!ok)w.push({code:codes[pos],msg:s.n+'（未就学）の隣に保護者がいません'});
+      }else{
+        ok=ss.some(function(o){return o&&o.k==='a'&&famKey(o)===fk;});
+        if(!ok)w.push({code:codes[pos],msg:s.n+'（小学生）と同じ机に保護者がいません'});
+      }
+    });
+    if(occ.length===3&&occ.some(function(x){return x.k!=='a';})){
+      var k0=famKey(occ[0]);
+      if(!occ.every(function(x){return famKey(x)===k0;}))w.push({code:codes[1],msg:codes[0]+'〜'+codes[2]+'の机：子どもを含む3人掛けは同じ家族だけにしてください'});
+    }
+  }
+  return w;
+}
+
+/* ---------- reading .xlsx / .csv / pasted cells ---------- */
+function u16(b,o){return b[o]|(b[o+1]<<8);}
+function u32(b,o){return (b[o]|(b[o+1]<<8)|(b[o+2]<<16)|(b[o+3]<<24))>>>0;}
+function unzip(b){
+  var i=b.length-22;for(;i>=0;i--){if(u32(b,i)===0x06054b50)break;}
+  if(i<0)throw new Error('notzip');
+  var n=u16(b,i+10),off=u32(b,i+16),files={},td=new TextDecoder();
+  for(var k=0;k<n&&off+46<=b.length;k++){
+    if(u32(b,off)!==0x02014b50)break;
+    var nl=u16(b,off+28),xl=u16(b,off+30),cl=u16(b,off+32);
+    files[td.decode(b.subarray(off+46,off+46+nl))]={method:u16(b,off+10),csize:u32(b,off+20),lo:u32(b,off+42)};
+    off+=46+nl+xl+cl;
+  }
+  return {b:b,files:files};
+}
+function readEntry(z,name){
+  var f=z.files[name];if(!f)return Promise.resolve('');
+  var b=z.b,start=f.lo+30+u16(b,f.lo+26)+u16(b,f.lo+28),data=b.subarray(start,start+f.csize);
+  if(f.method===0)return Promise.resolve(new TextDecoder().decode(data));
+  if(f.method!==8||typeof DecompressionStream==='undefined')return Promise.reject(new Error('nodeflate'));
+  return new Response(new Blob([data]).stream().pipeThrough(new DecompressionStream('deflate-raw'))).text();
+}
+function xmlEls(node,name){return Array.prototype.slice.call(node.getElementsByTagNameNS('*',name));}
+function xmlDoc(t){return new DOMParser().parseFromString(t,'application/xml');}
+function plainText(node){var out='';xmlEls(node,'t').forEach(function(tn){if(tn.parentNode&&tn.parentNode.localName==='rPh')return;out+=tn.textContent;});return out;}
+function sharedStrings(t){return t?xmlEls(xmlDoc(t),'si').map(plainText):[];}
+function colIndex(ref){var m=/^([A-Z]+)/.exec(ref||''),n=0;if(!m)return -1;for(var i=0;i<m[1].length;i++)n=n*26+(m[1].charCodeAt(i)-64);return n-1;}
+function sheetRows(t,ss){
+  var rows=[];
+  xmlEls(xmlDoc(t),'row').forEach(function(rw){
+    var row=[];
+    xmlEls(rw,'c').forEach(function(c,idx){
+      var ci=colIndex(c.getAttribute('r'));if(ci<0)ci=idx;
+      var ty=c.getAttribute('t'),v='';
+      if(ty==='inlineStr')v=plainText(c);
+      else{var vn=xmlEls(c,'v')[0];v=vn?vn.textContent:'';if(ty==='s')v=ss[+v]||'';}
+      row[ci]=v;
+    });
+    rows.push(row);
+  });
+  return rows;
+}
+function xlsxPeople(bytes){
+  var z=unzip(bytes);
+  var names=Object.keys(z.files).filter(function(n){return /^xl\/worksheets\/[^\/]+\.xml$/.test(n);});
+  names.sort(function(p,q){return (parseInt(p.replace(/\D+/g,''),10)||0)-(parseInt(q.replace(/\D+/g,''),10)||0);});
+  if(!names.length)throw new Error('notxlsx');
+  return readEntry(z,'xl/sharedStrings.xml').then(function(sst){
+    var ss=sharedStrings(sst),i=0;
+    function next(){
+      if(i>=names.length)throw new Error('noheader');
+      return readEntry(z,names[i++]).then(function(t){
+        try{var p=rowsToPeople(sheetRows(t,ss));if(p.length)return p;}catch(e){if(e.message!=='noheader')throw e;}
+        return next();
+      });
+    }
+    return next();
+  });
+}
+function parseDelimited(text){
+  var lines=text.replace(/\r\n?/g,'\n'),d=lines.indexOf('\t')>=0?'\t':',',rows=[],row=[],cur='',q=false,i,ch;
+  for(i=0;i<lines.length;i++){
+    ch=lines.charAt(i);
+    if(q){if(ch==='"'){if(lines.charAt(i+1)==='"'){cur+='"';i++;}else q=false;}else cur+=ch;}
+    else if(ch==='"'&&cur==='')q=true;
+    else if(ch===d){row.push(cur);cur='';}
+    else if(ch==='\n'){row.push(cur);rows.push(row);row=[];cur='';}
+    else cur+=ch;
+  }
+  if(cur!==''||row.length){row.push(cur);rows.push(row);}
+  return rows;
+}
+function bytesPeople(bytes){
+  if(bytes.length>3&&bytes[0]===0x50&&bytes[1]===0x4b)return xlsxPeople(bytes);
+  if(bytes.length>3&&bytes[0]===0xd0&&bytes[1]===0xcf)return Promise.reject(new Error('oldxls'));
+  var text;
+  try{text=new TextDecoder('utf-8',{fatal:true}).decode(bytes);}
+  catch(e){try{text=new TextDecoder('shift_jis').decode(bytes);}catch(e2){text=new TextDecoder().decode(bytes);}}
+  return Promise.resolve().then(function(){return rowsToPeople(parseDelimited(text));});
+}
+function importError(e){
+  var m=e&&e.message;
+  if(m==='noheader')return '「氏名」という見出しの列が見つかりませんでした。見出しの行ごと読み込んでください。';
+  if(m==='oldxls')return '古い形式（.xls）は読めません。.xlsx で保存し直すか、表をコピーして貼り付けてください。';
+  if(m==='nodeflate')return 'このブラウザではExcelファイルを開けません。表をコピーして貼り付けてください。';
+  return 'ファイルを読み込めませんでした。表をコピーして貼り付ける方法もお試しください。';
+}
+function importDone(people){
+  if(!people.length){toast('名簿に氏名が見つかりませんでした。');return;}
+  sheet={kind:'import-ok',plan:planSeats(people),people:people};render();
+}
+
+/* ---------- share link (compressed when the browser can) ---------- */
+function packState(st){
+  var o={t:st.title,s:st.sub,p:{}};
+  Object.keys(st.seats).forEach(function(c){var x=st.seats[c];o.p[c]=[x.n,x.a,x.k,x.t,x.f||''];});
+  return JSON.stringify(o);
+}
+function unpackState(json){
+  var o=JSON.parse(json);
+  if(o&&o.seats)return clean(o);
+  if(!o||typeof o.p!=='object'||!o.p)return null;
+  var out={title:o.t,sub:o.s,seats:{}};
+  Object.keys(o.p).forEach(function(c){var a=o.p[c];if(Array.isArray(a))out.seats[c]={n:a[0],a:a[1],k:a[2],t:a[3],f:a[4]};});
+  return clean(out);
+}
+function b64url(bytes){
+  var s='';for(var i=0;i<bytes.length;i+=0x8000)s+=String.fromCharCode.apply(null,bytes.subarray(i,i+0x8000));
+  return btoa(s).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+}
+function b64urlBytes(h){
+  var b=h.replace(/-/g,'+').replace(/_/g,'/');while(b.length%4)b+='=';
+  var s=atob(b),a=new Uint8Array(s.length);for(var i=0;i<s.length;i++)a[i]=s.charCodeAt(i);return a;
+}
+function pipe(bytes,stream){return new Response(new Blob([bytes]).stream().pipeThrough(stream)).arrayBuffer().then(function(b){return new Uint8Array(b);});}
+function shareUrl(){
+  var base=location.href.split('#')[0],raw=new TextEncoder().encode(packState(state));
+  if(typeof CompressionStream==='undefined')return Promise.resolve(base+'#s='+b64url(raw));
+  return pipe(raw,new CompressionStream('deflate-raw')).then(function(z){return base+'#z='+b64url(z);},function(){return base+'#s='+b64url(raw);});
+}
+function boot(){
+  var m=/^#([sz])=([A-Za-z0-9_-]+)$/.exec(location.hash||'');
+  viewing=false;state=loadDraft()||defaultState();
+  if(!m){render();return Promise.resolve();}
+  return Promise.resolve().then(function(){
+    var bytes=b64urlBytes(m[2]);
+    if(m[1]==='s')return bytes;
+    if(typeof DecompressionStream==='undefined')throw new Error('nodeflate');
+    return pipe(bytes,new DecompressionStream('deflate-raw'));
+  }).then(function(bytes){
+    var st=unpackState(new TextDecoder().decode(bytes));
+    if(!st)throw new Error('bad');
+    st.rev=0;state=st;viewing=true;render();
+  }).catch(function(e){
+    render();
+    if(e&&e.message==='nodeflate')toast('このブラウザでは共有リンクを開けません。別のブラウザでお試しください。');
+  });
+}
+
+/* ---------- drag and drop: swap two seats ---------- */
+var drag=null,suppressClick=false;
+function seatElAt(x,y){
+  var el=document.elementFromPoint(x,y);
+  while(el&&el!==document.body){if(el.classList&&el.classList.contains('seat'))return el;el=el.parentNode;}
+  return null;
+}
+function seatElOf(target){
+  var el=target;
+  while(el&&el!==app){if(el.classList&&el.classList.contains('seat'))return el;el=el.parentNode;}
+  return null;
+}
+function dragArm(el,x,y){
+  if(viewing||sheet||!el||!el.classList.contains('on'))return false;
+  drag={code:el.getAttribute('data-c'),sx:x,sy:y,x:x,y:y,active:false,over:null,ghost:null,timer:0,tick:0};
+  return true;
+}
+function dragStart(){
+  if(!drag||drag.active)return;
+  var s=state.seats[drag.code];if(!s){drag=null;return;}
+  drag.active=true;
+  var g=document.createElement('div');g.className='ghost';g.textContent=s.n;document.body.appendChild(g);drag.ghost=g;
+  var src=app.querySelector('.seat[data-c="'+drag.code+'"]');if(src)src.classList.add('dragging');
+  document.body.classList.add('drag-on');
+  try{if(navigator.vibrate)navigator.vibrate(15);}catch(e){}
+  drag.tick=setInterval(dragScroll,30);
+  dragMove(drag.x,drag.y);
+}
+function dragScroll(){
+  if(!drag||!drag.active)return;
+  var sc=document.getElementById('scroll');if(!sc)return;
+  var r=sc.getBoundingClientRect(),x=drag.x,y=drag.y,moved=false;
+  if(x<r.left+36){sc.scrollLeft-=14;moved=true;}else if(x>r.right-36){sc.scrollLeft+=14;moved=true;}
+  var bar=document.querySelector('.bar'),bottom=bar?bar.getBoundingClientRect().top:window.innerHeight;
+  if(y<50){window.scrollBy(0,-14);moved=true;}else if(y>bottom-30){window.scrollBy(0,14);moved=true;}
+  if(moved)dragOver();
+}
+function dragOver(){
+  var t=seatElAt(drag.x,drag.y),code=t?t.getAttribute('data-c'):null;
+  if(code===drag.over)return;
+  var old=app.querySelector('.seat.drop');if(old)old.classList.remove('drop');
+  drag.over=code;
+  if(t&&code!==drag.code)t.classList.add('drop');
+}
+function dragMove(x,y){
+  drag.x=x;drag.y=y;
+  drag.ghost.style.transform='translate('+(x+12)+'px,'+(y-46)+'px)';
+  dragOver();
+}
+function dragEnd(cancel){
+  if(!drag)return;
+  var d=drag;drag=null;
+  clearTimeout(d.timer);clearInterval(d.tick);
+  if(!d.active)return;
+  if(d.ghost&&d.ghost.parentNode)d.ghost.parentNode.removeChild(d.ghost);
+  document.body.classList.remove('drag-on');
+  if(!cancel&&d.over&&d.over!==d.code&&validCode(d.over)){
+    var A=state.seats[d.code],B=state.seats[d.over];
+    if(B)state.seats[d.code]=B;else delete state.seats[d.code];
+    state.seats[d.over]=A;
+    touch();
+  }
+  suppressClick=true;setTimeout(function(){suppressClick=false;},350);
+  render();
+}
+app.addEventListener('mousedown',function(e){
+  if(e.button!==0||drag)return;
+  dragArm(seatElOf(e.target),e.clientX,e.clientY);
+});
+window.addEventListener('mousemove',function(e){
+  if(!drag||drag.touch)return;
+  if(!drag.active){if(Math.abs(e.clientX-drag.sx)+Math.abs(e.clientY-drag.sy)<7)return;drag.x=e.clientX;drag.y=e.clientY;dragStart();if(!drag)return;}
+  e.preventDefault();dragMove(e.clientX,e.clientY);
+});
+window.addEventListener('mouseup',function(){if(drag&&!drag.touch)dragEnd(false);});
+app.addEventListener('touchstart',function(e){
+  if(drag||e.touches.length!==1)return;
+  var t=e.touches[0];
+  if(!dragArm(seatElOf(e.target),t.clientX,t.clientY))return;
+  drag.touch=true;drag.timer=setTimeout(dragStart,380);
+},{passive:true});
+app.addEventListener('touchmove',function(e){
+  if(!drag||!drag.touch)return;
+  var t=e.touches[0];
+  if(!drag.active){
+    if(Math.abs(t.clientX-drag.sx)+Math.abs(t.clientY-drag.sy)>10)dragEnd(true);
+    else{drag.x=t.clientX;drag.y=t.clientY;}
+    return;
+  }
+  if(e.cancelable)e.preventDefault();
+  dragMove(t.clientX,t.clientY);
+},{passive:false});
+app.addEventListener('touchend',function(e){
+  if(!drag||!drag.touch)return;
+  if(drag.active&&e.cancelable)e.preventDefault();
+  dragEnd(false);
+},{passive:false});
+app.addEventListener('touchcancel',function(){if(drag&&drag.touch)dragEnd(true);});
+app.addEventListener('contextmenu',function(e){if(seatElOf(e.target))e.preventDefault();});
+
+boot();
+window.addEventListener('hashchange',function(){sheet=null;boot();});
+window.__sekiji={shareUrl:shareUrl,pdfBytes:pdfBytes,rowsToPeople:rowsToPeople,planSeats:planSeats,validate:validate,sharedStrings:sharedStrings,parseDelimited:parseDelimited,clinicColors:function(){return clinicColors(state);},getState:function(){return state;}};
 })();
 </script></body></html>
